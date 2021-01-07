@@ -34,19 +34,19 @@ youtube_channels = ["https://www.youtube.com/c/MeetKevin/videos", "https://www.y
                     ]
 
 # Read file with most common words
-import pickle
-most_common_words = pickle.load(open("most_common_words1000.p", "rb"))
+import joblib
+most_common_words = list(joblib.load("most_common_words1000.joblib"))
 #most_common_words += words_to_add
-#pickle.dump(most_common_words, open("most_common_words1000.p", "wb"))
-#words_to_add = []
+#joblib.dump(np.asarray(most_common_words), "most_common_words1000.joblib")
+words_to_add = []
 
 first_stocks = dict()
 words_to_add = list()
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # Get some stock prices
-    ticker_df = functions.get_stock_prices("NOW?")
-    print(ticker_df)
+    #ticker_df = functions.get_stock_prices("NOW?")
+    #print(ticker_df)
 
     scraped_data = dict()
     for youtube_channel in youtube_channels:
@@ -86,6 +86,23 @@ if __name__ == '__main__':
             except KeyError as e:
                 print(f"{youtube_channel} did not post any videos today")
 
+
+def add_todays_stock_mentions(stock_df, stock_mentions):
+    stock_df[pd.Timestamp.today().strftime("%Y-%m-%d")] = 0
+    for mention in stock_mentions:
+        stock_df.loc[mention, pd.Timestamp.today().strftime("%Y-%m-%d")] = 1
+    return stock_df
+
+data_sets = dict()
+for stock in first_stocks.keys():
+    if stock in data_sets.keys():
+        stock_df = data_sets[stock]
+        data_sets.update({stock: add_todays_stock_mentions(stock_df, first_stocks)})
+    else:
+        stock_df = pd.DataFrame(index=youtube_channels)
+        data_sets.update({stock: add_todays_stock_mentions(stock_df, first_stocks[stock])})
+
+joblib.dump(data_sets, "data_sets.joblib")
 
 
 plt.figure()
