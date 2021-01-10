@@ -5,13 +5,7 @@ import functions
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-def clean_text(text):
-    return (text.replace(",", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "")
-            .replace(".", "").replace("$", "").replace("#", "").replace("@", "").replace(":", "")
-            .replace(";", "").replace("/", "").replace("!", "").replace("?", "").replace("-", "")
-            .replace("_", "").replace("&", "").replace("*", "").upper().split())
+import joblib
 
 
 youtube_channels = ["https://www.youtube.com/c/MeetKevin/videos", "https://www.youtube.com/c/BestofUSHomesKWRealty/videos",
@@ -34,93 +28,42 @@ youtube_channels = ["https://www.youtube.com/c/MeetKevin/videos", "https://www.y
                     ]
 
 # Read file with most common words
-import joblib
 most_common_words = list(joblib.load("most_common_words1000.joblib"))
 #most_common_words += words_to_add
-#joblib.dump(np.asarray(most_common_words), "most_common_words1000.joblib")
+#joblib.dump(np.asarray([str(abba) for abba in most_common_words]), "most_common_words1000.joblib")
 words_to_add = []
 
-first_stocks = dict()
-words_to_add = list()
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # Get some stock prices
     #ticker_df = functions.get_stock_prices("NOW?")
     #print(ticker_df)
 
-    scraped_data = dict()
-    for youtube_channel in youtube_channels:
-        url_list = functions.get_new_videos(youtube_channel)
-        for url in url_list:
-            results = functions.scrape_video_url(url)
-            scraped_data.update({youtube_channel: results})
-
-            # Try to look only in video tags for messages
-            try:
-                print("--------------------------------------")
-                print(results["title"])
-                title = results["title"]
-                #print(results["description"])
-                desc = results["description"]
-                print(results["tags"])
-                tags = results["tags"]
-                split_title = clean_text(title)
-                split_desc = clean_text(desc)
-                split_tags = clean_text(tags)
-                val_counts = pd.Series(split_tags + split_title + split_desc).value_counts()
-                word_count = len(pd.Series(split_tags + split_title + split_desc))
-                print(word_count)
-                #print(val_counts)
-                for i, word in enumerate(val_counts.index[val_counts > round(word_count / 200)]):
-                    if word.lower() in most_common_words:
-                        continue
-                    print(word, val_counts[i])
-                    a = functions.get_stock_prices(word)
-                    if len(a) == 0:
-                        words_to_add.append(word.lower())
-                    else:
-                        if word in first_stocks.keys():
-                            first_stocks[word].append(youtube_channel)
-                        else:
-                            first_stocks.update({word: [youtube_channel]})
-            except KeyError as e:
-                print(f"{youtube_channel} did not post any videos today")
+    # Scrape videos from last 24 hours
+    new_stocks, words_to_add = functions.scrape_videos_24h(youtube_channels, most_common_words)
 
 
-def add_todays_stock_mentions(stock_df, stock_mentions):
-    stock_df[pd.Timestamp.today().strftime("%Y-%m-%d")] = 0
-    for mention in stock_mentions:
-        stock_df.loc[mention, pd.Timestamp.today().strftime("%Y-%m-%d")] = 1
-    return stock_df
-
+# MOMENTARY - Update database with new stock recommendations from the last 24h
 data_sets = dict()
-for stock in first_stocks.keys():
-    if stock in data_sets.keys():
+#data_sets = joblib.load("data_sets.joblib")
+for stock in new_stocks.keys():
+    if stock in [*data_sets]:
         stock_df = data_sets[stock]
-        data_sets.update({stock: add_todays_stock_mentions(stock_df, first_stocks)})
+        data_sets.update({stock: functions.add_todays_stock_mentions(stock_df, new_stocks[stock])})
     else:
         stock_df = pd.DataFrame(index=youtube_channels)
-        data_sets.update({stock: add_todays_stock_mentions(stock_df, first_stocks[stock])})
-
-joblib.dump(data_sets, "data_sets.joblib")
-
-
-plt.figure()
-ticker_df.plot(label="Raw")
-ticker_df.diff().plot(label="Diff")
-
-# Smooth it
-win_size = 3
-smoothed = ticker_df.rolling(win_size, closed="right").mean()
-smoothed.dropna().plot(label="Smoothed with window size " + str(win_size))
-
-plt.legend()
+        list_of_timestamps = functions.days_from_start_to_today()
+        for timestamp in list_of_timestamps:
+            stock_df[timestamp] = 0
+        data_sets.update({stock: functions.add_todays_stock_mentions(stock_df, new_stocks[stock])})
+#joblib.dump(data_sets, "data_sets.joblib")
 
 
-# Get all videos from the channels
-for youtube_channel in youtube_channels:
-    url_list = functions.get_all_videos(youtube_channel)
-    print(url_list)
-    print(len(url_list))
+# Construct data base by scraping all videos from all channels
+all_data = joblib.load("all_data_during_processing.joblib")  # Load already scraped channels
+start_date = [2019, 7, 1]
+data_base, most_common_words = functions.construct_date_base(youtube_channels, most_common_words, start_date, all_data)
 
 
+# Visualize

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from requests_html import HTMLSession
 from bs4 import BeautifulSoup as bs
 import os
+import joblib
 
 
 def get_stock_prices(ticker_symbol):
@@ -51,7 +52,7 @@ def get_soup(url):
     # download HTML code
     response = session.get(url)
     # execute Javascript
-    response.html.render(sleep=2)
+    response.html.render(sleep=3, timeout=60, keep_page=True)
     # create beautiful soup object to parse HTML
     soup = bs(response.html.html, "html.parser")
     # Close the HTMLSession
@@ -166,3 +167,168 @@ def print_scraped_data(url):
     print(f"\nChannel Name: {data['channel']['name']}")
     print(f"Channel URL: {data['channel']['url']}")
     print(f"Channel Subscribers: {data['channel']['subscribers']}")
+
+
+def get_stocks_mentioned(title, desc, tags, most_common_words, print_stats=False):
+    not_stocks = list()
+    actual_stocks = list()
+    split_title = clean_text(title)
+    split_desc = clean_text(desc)
+    split_tags = clean_text(tags)
+    val_counts = pd.Series(split_tags + split_title + split_desc).value_counts()
+    word_count = len(pd.Series(split_tags + split_title + split_desc))
+    if print_stats:
+        print(word_count)
+    for i, word in enumerate(val_counts.index[val_counts > round(word_count / 200)]):
+        if word.lower() in most_common_words:
+            continue
+        if print_stats:
+            print(word, val_counts[i])
+        stock_prices = get_stock_prices(word)
+        if len(stock_prices) == 0:
+            not_stocks.append(word.lower())
+        else:
+            actual_stocks.append(word)
+    return actual_stocks, not_stocks
+
+
+def clean_text(text):
+    return (text.replace(",", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "")
+            .replace(".", "").replace("$", "").replace("#", "").replace("@", "").replace(":", "")
+            .replace(";", "").replace("/", "").replace("!", "").replace("?", "").replace("-", "")
+            .replace("_", "").replace("&", "").replace("*", "").upper().split())
+
+
+def construct_date_base(youtube_channels, most_common_words, start_date, all_data=None):
+    # If first run, create new all_data dict
+    if all_data is None:
+        all_data = dict()
+    else:
+        # If some channels have been scraped, make sure these channels are not scraped again
+        remaining_channels = np.setdiff1d(youtube_channels, [*all_data])
+    # Scrape remaining channels
+    for youtube_channel in remaining_channels:
+        url_list = get_all_videos(youtube_channel)
+        print(f"There are {len(url_list)} videos in the channel {youtube_channel}")
+
+        scraped_data = dict()
+        for i, url in enumerate(url_list):
+            results = scrape_video_url(url)
+            actual_stocks, not_stocks = get_stocks_mentioned(results["title"], results["description"],
+                                                             results["tags"], most_common_words, print_stats=False)
+            scraped_data.update({results["date_published"]: actual_stocks})
+            most_common_words += not_stocks
+
+            if i % 99 == 0 and i > 0:
+                print(f"{i + 1} videos scraped out of {len(url_list)}")
+                joblib.dump([scraped_data, [str(w) for w in most_common_words]], "scraped_data_during_processing.joblib")
+
+        all_data.update({youtube_channel: scraped_data})
+        joblib.dump(all_data, "all_data_during_processing.joblib")
+    # Rewrite scraped data to data_base
+    data_base = from_scraped_channels_to_data_base(all_data, start_date, youtube_channels)
+    return data_base, most_common_words
+
+
+def from_scraped_channels_to_data_base(all_data, start_date, youtube_channels):
+    data_base = dict()
+    for youtube_channel in all_data.keys():
+        # Get list of pub. dates
+        keys_in_list = [*all_data[youtube_channel]]
+        # Split strings in list
+        split_keys_in_list = [date.replace(".", "").split() for date in keys_in_list]
+        # Make an list of month to index for month abbr.
+        months = ["", "jan", "feb", "mar", "apr", "maj", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
+        # Write all publication dates as pandas Timestamp objects
+        all_dates_as_timestamps = [pd.Timestamp(int(date[-1]), int(months.index(date[-2])), int(date[-3])) for date in
+                                   split_keys_in_list]
+
+        # Sort keys in order from oldest to newest
+        sort_order = np.argsort(all_dates_as_timestamps)
+        sorted_all_dates_as_timestamps = np.asarray(all_dates_as_timestamps)[sort_order]
+        sorted_keys_in_list = np.asarray(keys_in_list)[sort_order]
+
+        # Make a mask to only get timestamps after start_date
+        mask = sorted_all_dates_as_timestamps > pd.Timestamp(start_date[0], start_date[1], start_date[2])
+        # Extract relevant dates and keys
+        relevant_dates_as_timestamps = sorted_all_dates_as_timestamps[mask]
+        relevant_keys_in_list = sorted_keys_in_list[mask]
+        # Make a list with keys to pop from dictionary
+        pop_list = sorted_keys_in_list[~mask]
+        # Pop/remove elements in pop_list from dictionary
+        for pop_element in pop_list:
+            all_data[youtube_channel].pop(pop_element)
+
+        # Assert if there are indeed any videos on the channel
+        assert len(relevant_keys_in_list) > 0
+
+        # Get list of all stocks mentioned on this channel
+        all_stocks_mentioned = np.unique([item for sublist in [*all_data[youtube_channel].values()] for item in sublist])
+
+        # Find all stocks not already in the data_base
+        new_stocks = np.setdiff1d(all_stocks_mentioned, [*data_base])
+        # Make a data_base entry for each new_stock and fill it with zeros from start up until today
+        for stock in new_stocks:
+            stock_df = pd.DataFrame(index=youtube_channels)
+            list_of_timestamps = days_from_start_to_today()
+            for timestamp in list_of_timestamps:
+                stock_df[timestamp.strftime("%Y-%m-%d")] = 0
+            data_base.update({stock: stock_df})
+
+        # Go over all dates with videos in youtube_channel
+        for i, key in enumerate(relevant_keys_in_list):
+            # Get the stock mentioned on the day of key
+            stocks_the_keyth_day = all_data[youtube_channel][key]
+            # If no stocks are mentioned, skip the video date
+            if len(stocks_the_keyth_day) == 0:
+                continue
+            else:
+                # For all stocks mentioned on the day, take a note that they were mentioned by youtube_channel
+                for stock in stocks_the_keyth_day:
+                    data_base[stock].loc[youtube_channel, relevant_dates_as_timestamps[i].strftime("%Y-%m-%d")] = 1
+    return data_base
+
+
+def add_todays_stock_mentions(stock_df, stock_mentions):
+    stock_df[pd.Timestamp.today().strftime("%Y-%m-%d")] = 0
+    for mention in stock_mentions:
+        stock_df.loc[mention, pd.Timestamp.today().strftime("%Y-%m-%d")] = 1
+    return stock_df
+
+
+def days_from_start_to_today():
+    start_date = pd.Timestamp(2020, 7, 1)
+    today = pd.Timestamp.today()
+    list_of_days = [start_date + pd.Timedelta(days=days) for days in range((today - start_date).days + 1)]
+    return list_of_days
+
+
+def scrape_videos_24h(youtube_channels, most_common_words):
+    new_stocks = dict()
+    words_to_add = list()
+    scraped_data = dict()
+    for youtube_channel in youtube_channels:
+        url_list = get_new_videos(youtube_channel)
+        for url in url_list:
+            results = scrape_video_url(url)
+            scraped_data.update({youtube_channel: results})
+
+            # Try to look only in video tags for messages
+            try:
+                print("--------------------------------------")
+                print(results["title"])
+                #print(results["description"])
+                print(results["tags"])
+
+                actual_stocks, not_stocks = get_stocks_mentioned(results["title"], results["description"],
+                                                                 results["tags"], most_common_words, print_stats=True)
+                print(not_stocks, actual_stocks)
+                words_to_add += not_stocks
+                for stock in actual_stocks:
+                    if stock in new_stocks.keys():
+                        new_stocks[stock].append(youtube_channel)
+                    else:
+                        new_stocks.update({stock: [youtube_channel]})
+            except KeyError as e:
+                print(f"{youtube_channel} did not post any videos today")
+    return new_stocks, words_to_add
