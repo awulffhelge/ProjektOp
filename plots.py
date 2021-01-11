@@ -7,24 +7,33 @@ import matplotlib.pyplot as plt
 import functions
 
 
-def plot_mentions_and_stocks_together(data_base):
-
-    for i, stock in enumerate(data_base.keys()):
+def plot_mentions_and_stocks_together(df_mentions, stock, start_date):
+    # Get stock prices
+    df_ticker = functions.get_stock_prices(stock, start_date)
+    # Change it to percentage
+    try:
+        percentage_value = functions.get_stock_percentage(df_ticker)
         # Sum the mentions of stock
-        summed_mentions = data_base[stock].sum(axis=0)
-        # Get stock prices
-        ticker_df = functions.get_stock_prices(stock)
+        df_mentions_over_time = functions.get_mentions_over_time(df_mentions, start_date)
 
         # Plot mentions and stock together
         fig, ax0 = plt.subplots()
         ax1 = ax0.twinx()
-        ax0.plot(ticker_df.index, ticker_df.values, color="gold", label="Stock price")
-        ax1.plot(pd.to_datetime(summed_mentions.index), summed_mentions.values, color="teal", label="Mentions")
+        ax0.plot(df_ticker.index, percentage_value, color="gold", label="Stock price", zorder=1)
+        ax1.bar(df_mentions_over_time.index, df_mentions_over_time.values, color="teal", label="Mentions", zorder=100)
         ax0.legend(loc=2)
         ax1.legend(loc=6)
         ax0.set_xlabel("Date")
-        ax0.set_ylabel("Stock Price [$]")
+        ax0.set_ylabel("Stock Price [%]")
         ax1.set_ylabel("Mentions [n]")
-        fig.suptitle(stock)
+        ax1.set_ylim(0, 8)
+        fig.suptitle(stock + " - start price: " + str(np.round(df_ticker[0], 2).item()) + " $")
+        ax0.set_zorder(ax1.get_zorder() + 1)
+        ax0.patch.set_visible(False)
+        plt.show()
+    except IndexError as e:
+        print(e)
+
+
 
 
