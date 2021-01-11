@@ -12,10 +12,12 @@ import joblib
 import sqlite3
 
 
-def get_stock_percentage(df_ticker):
+def get_stock_percentage(ticker_symbol, start_date):
+    # Get stock prices
+    df_ticker = get_stock_prices(ticker_symbol, start_date)
     # Get stock prices in percentage
     percentage_value = (df_ticker.values / df_ticker.values[0]) * 100
-    return percentage_value
+    return percentage_value, df_ticker
 
 
 def get_stock_prices(ticker_symbol, start_date):
