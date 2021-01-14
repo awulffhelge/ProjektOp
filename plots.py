@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 import functions
 
 
-def plot_mentions_and_stocks_together(df_mentions, stock, start_date):
+def plot_mentions_and_stocks_together(df_mentions, stock, start_date, df_ticker):
     try:
         # Get stock prices in percent and raw
-        percentage_value, df_ticker = functions.get_stock_percentage(stock, start_date)
+        percentage_value = functions.compute_stock_percentage(df_ticker)
         # Sum the mentions of stock
         df_mentions_over_time = functions.get_mentions_over_time(df_mentions, start_date)
 

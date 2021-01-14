@@ -9,18 +9,25 @@ from requests_html import HTMLSession
 from bs4 import BeautifulSoup as bs
 import os
 import joblib
+import random
 import sqlite3
+import finnhub
+import time
 
 
-def get_stock_percentage(ticker_symbol, start_date):
+def compute_stock_percentage(df_ticker):
+    return (df_ticker.values / df_ticker.dropna().values[0]) * 100
+
+
+def get_stock_percentage(ticker_symbol, start_date, finnhub_client):
     # Get stock prices
-    df_ticker = get_stock_prices(ticker_symbol, start_date)
+    df_ticker = get_stock_prices(ticker_symbol, start_date, finnhub_client)
     # Get stock prices in percentage
     percentage_value = (df_ticker.values / df_ticker.values[0]) * 100
     return percentage_value, df_ticker
 
 
-def get_stock_prices(ticker_symbol, start_date):
+def get_stock_prices(ticker_symbol, start_date, finnhub_client):
     """ Get the closing stock price for the last year
     Parameters
     ----------
@@ -31,16 +38,20 @@ def get_stock_prices(ticker_symbol, start_date):
         ticker_df["Close"]: pandas dataframe
             Dataframe containing all closing values in the only column and corresponding dates in the index. Only dates
             where the stockmarket is open. """
-    start_date = start_date.strftime("%Y-%m-%d")
-    end_date = datetime.today().date().strftime("%Y-%m-%d")
+    end_date = pd.Timestamp(pd.Timestamp.today().date())
+    end_unix = get_unix_time(end_date)
+    start_unix = get_unix_time(start_date)
 
-    #get data on this ticker
-    ticker_data = yf.Ticker(ticker_symbol)
+    # Pause shortly
+    time.sleep(1)
 
-    #get the historical prices for this ticker
-    df_ticker = ticker_data.history(period='1d', start=start_date, end=end_date)
-
-    return df_ticker["Close"]
+    # Stock candles
+    res = finnhub_client.stock_candles(ticker_symbol, 'D', start_unix, end_unix)
+    # Convert to Pandas Dataframe
+    df_finnhub = pd.DataFrame(res)
+    timestamp_index = df_finnhub["t"].apply(lambda x: pd.Timestamp(pd.to_datetime(x, unit='s', origin='unix').date()))
+    df_ticker = pd.DataFrame(df_finnhub["c"].values, index=timestamp_index.values)
+    return df_ticker
 
 
 def get_stocks_mentioned(text, most_common_words, print_stats=False):
@@ -77,7 +88,7 @@ def days_from_start_to_today(start_date):
     return list_of_days
 
 
-def construct_data_base(most_common_words):
+def construct_data_base(most_common_words, start_date):
     # Create a SQL connection to our SQLite database
     con = sqlite3.connect("data/foo.db")
     # Load files
@@ -128,6 +139,9 @@ def construct_data_base(most_common_words):
     # Close connection
     con.close()
 
+    # Make data base with stock prices
+    construct_stock_database(df_youtubeVideos["stock"].value_counts(), start_date)
+
 
 def get_mentions_over_time(df_mentions, start_date):
     date_index = days_from_start_to_today(start_date)
@@ -135,3 +149,39 @@ def get_mentions_over_time(df_mentions, start_date):
     for mention in df_mentions["date"]:
         df_mentions_over_time.loc[mention.date()] += 1
     return df_mentions_over_time
+
+
+def construct_stock_database(stock_names, start_date):
+    stock_names = stock_names.index.values
+    # Set end date
+    end_date = pd.Timestamp(pd.Timestamp.today().date())
+    df = pd.DataFrame(index=pd.date_range(start_date, end_date))
+
+    # Setup client
+    finnhub_client = finnhub.Client(api_key="bvvj5q748v6qmipnulbg")
+    for stock in stock_names:
+        # Get prices of stock and save them in a pd.DataFrame
+        try:
+            _, df_ticker = get_stock_percentage(stock, start_date, finnhub_client)
+        except (IndexError, ValueError) as e:
+            print(f"{stock} not loaded, error message: {e}")
+            continue
+        df[stock] = df_ticker
+
+    # Split into test and training
+    random.Random(4).shuffle(stock_names)
+    train_stocks = stock_names[:int(len(stock_names) * 0.7)]
+    test_stocks = stock_names[int(len(stock_names) * 0.7):]
+    traintest_stock = np.concatenate((train_stocks, test_stocks))
+    traintest_param = ["train"] * len(train_stocks) + ["test"] * len(test_stocks)
+    df_traintest = pd.DataFrame({"data_set": traintest_param}, index=traintest_stock)
+
+    # Send to sqlite3 data base
+    con = sqlite3.connect("data/youtube_stocks.db")
+    df.to_sql("stockPrices", con, if_exists="replace")
+    df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
+    con.close()
+
+
+def get_unix_time(timestamp):
+    return int((timestamp - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s'))

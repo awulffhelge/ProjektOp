@@ -1,4 +1,4 @@
-""" Projekt Op main script """
+""" Projekt Op main script. """
 
 
 import functions
@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import joblib
 import plots
 import sqlite3
+import classes
 
 
 # Set some parameters
@@ -16,54 +17,61 @@ most_common_words = list(joblib.load("most_common_words1000.joblib"))  # Read fi
 # Make a list of words to manually add
 not_stocks = ["fund", "per", "index", "tech", "ways", "corp", "uk", "tips", "dash", "im", "dow", "earn", "wins",
               "pros", "jobs", "away", "mini", "plus", "pure", "vice", "ai", "sub", "apps", "ups", "usd", "away",
-              "giga", "edit", "media"]
+              "giga", "edit", "media", "gmc", "loop", "mp", "dphc", "pic", "gaxy"]
 # Maybe list: joe, spaq, gene, cap, ma, ba, dal, riot, nflx, iq, rare, snap, net, wrap, bio, att
 # Problems with some stocks (PIC)
 # Add words if needed
 #joblib.dump(np.asarray([str(word) for word in most_common_words]), "most_common_words1000.joblib")
 
+
 # Construct data base, processing Adams sqlite data base and making a new called youtube_stock.db
 if make_db:
-    functions.construct_data_base(most_common_words)
+    functions.construct_data_base(most_common_words, start_date=pd.Timestamp(2020, 7, 1))
+
 
 # Load data sets
 con = sqlite3.connect("data/youtube_stocks.db")
-df_youtubeVideos = pd.read_sql_query("SELECT * from stockMentions", con)
+df_stockMentions = pd.read_sql_query("SELECT * from stockMentions", con)
 df_youtubeSources = pd.read_sql_query("SELECT * from youtubeSources", con)
+df_stockPrices = pd.read_sql_query("SELECT * from stockPrices", con)
+df_trainTest = pd.read_sql_query("SELECT * from stockTrainOrTestSet", con)
 con.close()
+# Make Date column in stockPrices into Timestamps and set it as index
+df_stockPrices["index"] = df_stockPrices["index"].apply(lambda x: pd.Timestamp(x))
+df_stockPrices = df_stockPrices.set_index("index")
 # Remove all not_stocks from data set
 for name in not_stocks:
-    df_youtubeVideos = df_youtubeVideos.loc[df_youtubeVideos["stock"].values != name.upper()]
+    df_stockMentions = df_stockMentions.loc[df_stockMentions["stock"].values != name.upper()]
 # Convert dates to Timestamp
-df_youtubeVideos["date"] = df_youtubeVideos["date"].apply(lambda x: pd.Timestamp(x))
+df_stockMentions["date"] = df_stockMentions["date"].apply(lambda x: pd.Timestamp(x))
 # Get names of youtube channels
 youtube_channels = df_youtubeSources["name"]
-# Get the start date. For all data use: df_youtubeVideos["date"].min()
+# Get the start date. For all data use: df_stockMentions["date"].min()
 start_date = pd.Timestamp(2020, 7, 1)
 # Remove all data before start_date
-df_youtubeVideos = df_youtubeVideos[df_youtubeVideos["date"] > start_date]
+df_stockMentions = df_stockMentions[df_stockMentions["date"] > start_date]
 # Get array containing names of all stocks mentioned more than once and array of stock discarded
-stock_names = df_youtubeVideos["stock"].value_counts().loc[lambda x: x > 1].index
-stock_discarded = df_youtubeVideos["stock"].value_counts().loc[lambda x: x < 2].index
+stock_names = df_stockMentions["stock"].value_counts().index
+#stock_discarded = df_stockMentions["stock"].value_counts().loc[lambda x: x < 2].index
 # Remove all stocks not in stock_names
-for stock in stock_discarded:
-    df_youtubeVideos = df_youtubeVideos.loc[df_youtubeVideos["stock"].values != stock]
+#for stock in stock_discarded:
+#    df_stockMentions = df_stockMentions.loc[df_stockMentions["stock"].values != stock]
 
 
 # Only visualize a single channel
 visualize_channel = "RexFinance"
 if visualize_channel:
     youtuber_id = df_youtubeSources["id"][df_youtubeSources["name"] == visualize_channel].item()
-    df_youtubeVideos = df_youtubeVideos[df_youtubeVideos["source"] == youtuber_id]
+    df_stockMentions = df_stockMentions[df_stockMentions["source"] == youtuber_id]
     # Get array containing names of all stocks
-    stock_names = df_youtubeVideos["stock"].unique()
+    stock_names = df_stockMentions["stock"].unique()
 
 # Visualize stocks and mentions over time
-for stock in stock_names:
+for stock in stock_names[60:120]:
     # Only take the relevant mentions
-    df_mentions = df_youtubeVideos[df_youtubeVideos["stock"] == stock]
+    df_mentions = df_stockMentions[df_stockMentions["stock"] == stock]
     # Plot a stock
-    plots.plot_mentions_and_stocks_together(df_mentions, stock, start_date)
+    plots.plot_mentions_and_stocks_together(df_mentions, stock, start_date, df_stockPrices[stock])
 
 
 # Define list to keep track of stats
@@ -71,7 +79,7 @@ avg_stats = list()
 # Get stats from each youtuber
 for youtuber_id in df_youtubeSources["id"]:
     # Make DataFrame with all rows related to youtuber_id
-    df_youtuber = df_youtubeVideos[df_youtubeVideos["source"] == youtuber_id]
+    df_youtuber = df_stockMentions[df_stockMentions["source"] == youtuber_id]
     # Get all the unique stocks mentioned in the channel
     stocks_in_channel = df_youtuber["stock"].unique()
     # For each stock:
@@ -81,13 +89,17 @@ for youtuber_id in df_youtubeSources["id"]:
         first_mention = df_youtuber["date"][df_youtuber["stock"] == stock].min().date()
         # Get the stock prices from the date an onwards
         try:
-            percentage_values, df_ticker = functions.get_stock_percentage(stock, first_mention)
-        except IndexError as e:
-            print(e)
+            df_ticker = df_stockPrices[stock][df_stockPrices.index > pd.Timestamp(first_mention)].iloc[:31]
+            if np.isnan(df_ticker.values).all():
+                print(f"{stock, first_mention} prices contains only NANs within first 31 days the stocks are open after first mention")
+                continue
+            percentage_values = functions.compute_stock_percentage(df_ticker)
+        except KeyError as e:
+            print(f"{stock} not available")
             continue
         # Get the peak increase and decrease during the next month
-        peak_increase = percentage_values[:31].max()
-        peak_decrease = percentage_values[:31].min()
+        peak_increase = np.nanmax(percentage_values)
+        peak_decrease = np.nanmin(percentage_values)
         #print(stock, peak_increase, peak_decrease)
         stat_list.append([peak_increase, peak_decrease])
     avg_stats.append(np.mean(stat_list, axis=0))
@@ -104,3 +116,25 @@ print(f"The three bottom youtube channels were ")
 print(f"{df_youtubeSources.name.iloc[bottom_performers]}. Earning between"
       f" {avg_stats[bottom_performers, 0]} and {avg_stats[bottom_performers, 1]} %")
 print("-----------------------")
+sort = np.flip(np.argsort(avg_stats[:, 0]))
+df_followers = pd.DataFrame({"Name": df_youtubeSources["name"].values[sort], "Followers": df_youtubeSources["subscribers"].values[sort],
+                             "Best performance": avg_stats[sort][:, 0], "Worst performance": avg_stats[sort][:, 1]})
+print(f"Performance relative to followers: {df_followers.Followers}")
+print(df_followers)
+
+
+# Run model parameters
+ml_model = classes.MLModelV1(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
+ml_model.get_parameters_and_labels("train")
+ml_model.cv_score()
+ml_model.cv_predict_similarity()
+ml_model.money_out()
+
+
+a = ml_model.cv_predictions
+b = ml_model.train_set_money[:, 0]
+c = ml_model.stock_list
+d = pd.DataFrame({"guess": a, "price": b, "stock": c})
+
+some = ml_model.train_set_params[a != 0, :]
+np.mean(some, axis=0)
