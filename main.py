@@ -1,4 +1,4 @@
-""" Projekt Op main script. """
+""" Projekt Op main script. GPVRF """
 
 
 import functions
@@ -17,9 +17,8 @@ most_common_words = list(joblib.load("most_common_words1000.joblib"))  # Read fi
 # Make a list of words to manually add
 not_stocks = ["fund", "per", "index", "tech", "ways", "corp", "uk", "tips", "dash", "im", "dow", "earn", "wins",
               "pros", "jobs", "away", "mini", "plus", "pure", "vice", "ai", "sub", "apps", "ups", "usd", "away",
-              "giga", "edit", "media", "gmc", "loop", "mp", "dphc", "pic", "gaxy"]
+              "giga", "edit", "media", "gmc", "loop", "mp", "dphc", "pic", "gaxy", "gpvrf"]
 # Maybe list: joe, spaq, gene, cap, ma, ba, dal, riot, nflx, iq, rare, snap, net, wrap, bio, att
-# Problems with some stocks (PIC)
 # Add words if needed
 #joblib.dump(np.asarray([str(word) for word in most_common_words]), "most_common_words1000.joblib")
 
@@ -58,7 +57,7 @@ stock_names = df_stockMentions["stock"].value_counts().index
 #    df_stockMentions = df_stockMentions.loc[df_stockMentions["stock"].values != stock]
 
 
-# Only visualize a single channel
+"""# Only visualize a single channel
 visualize_channel = "RexFinance"
 if visualize_channel:
     youtuber_id = df_youtubeSources["id"][df_youtubeSources["name"] == visualize_channel].item()
@@ -121,20 +120,41 @@ df_followers = pd.DataFrame({"Name": df_youtubeSources["name"].values[sort], "Fo
                              "Best performance": avg_stats[sort][:, 0], "Worst performance": avg_stats[sort][:, 1]})
 print(f"Performance relative to followers: {df_followers.Followers}")
 print(df_followers)
+"""
+
+# Train model tree
+ml_model_tree = classes.MLModelTree(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
+ml_model_tree.get_parameters_and_labels("train")
+ml_model_tree.cv_score()
+ml_model_tree.cv_predict_similarity()
+ml_model_tree.money_out_train()
+ml_model_tree.fit()
+
+# Test model tree
+ml_model_tree.get_parameters_and_labels("test")
+ml_model_tree.get_test_results()
 
 
-# Run model parameters
-ml_model = classes.MLModelV1(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
-ml_model.get_parameters_and_labels("train")
-ml_model.cv_score()
-ml_model.cv_predict_similarity()
-ml_model.money_out()
+from sklearn.tree import plot_tree, export_text
+ml_model_tree.tree.fit(ml_model_tree.train_set_params, ml_model_tree.train_set_labels)
+print(export_text(ml_model_tree.tree))
 
 
-a = ml_model.cv_predictions
-b = ml_model.train_set_money[:, 0]
-c = ml_model.stock_list
+a = ml_model_tree.cv_predictions
+b = ml_model_tree.train_set_money[:, 0]
+c = ml_model_tree.stock_list
 d = pd.DataFrame({"guess": a, "price": b, "stock": c})
 
-some = ml_model.train_set_params[a != 0, :]
+some = ml_model_tree.train_set_params[a != 0, :]
 np.mean(some, axis=0)
+
+e = b[a == 2]
+f = np.asarray(c)[a == 2]
+earn = list()
+st = list()
+for i in np.unique(f):
+    idx = np.nonzero(f == i)[0][0]
+    earn.append(e[idx])
+
+earn = np.asarray(earn)
+np.asarray(earn)[earn < 2000]

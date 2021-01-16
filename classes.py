@@ -1,12 +1,13 @@
 """ Classes
-Comments and to-do's: Change stock from absolute to percentage """
+Comments and to-do's: How many different youtuberes mentioned the stock """
 
 
 import numpy as np
 import pandas as pd
 import random
-from sklearn.model_selection import cross_val_score, cross_val_predict
+from sklearn.model_selection import cross_val_score, cross_val_predict, PredefinedSplit, cross_validate
 from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 np.seterr("raise")
 
 
@@ -22,19 +23,22 @@ class MLModel:
         self.test_set_params = np.empty((0, 8))
         self.train_set_labels = np.empty(0)
         self.test_set_labels = np.empty(0)
-        self.train_set_money = np.empty((0, 2))
-        self.test_set_money = np.empty((0, 2))
+        self.train_set_money = np.empty((0, 31))
+        self.test_set_money = np.empty((0, 31))
+
+        self.feature_names = ["price_today", "price_avg_last_3_days", "price_avg_last_7_days", "count_mentions_before",
+                              "days_since_first", "mentions_last_week", "mentions_today", "followers"]
 
         self.stock_names = df_stockMentions["stock"].value_counts().index.values
 
         self.train_stocks = df_trainTest["index"][df_trainTest["data_set"] == "train"].values
         self.test_stocks = df_trainTest["index"][df_trainTest["data_set"] == "test"].values
 
-        self.model = SVC()
-
         self.amount_of_stock_input = list()
+        self.stock_kfold_idxs = list()  # Pre determined folds to ensure that stocks are split between train and val
 
-        self.stock_list = list()
+        self.stock_list_train = list()
+        self.stock_list_test = list()
 
     def _get_mention_parameters(self, df_stockMentions_small, date_of_mention):
         # Count mentions of stock before date_of_mention
@@ -86,19 +90,19 @@ class MLModel:
                 raise ValueError("True label became NAN")
             else:
                 true_label = 0
-            return price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, max_increase, max_decrease
+            return price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close.values[:31]
         except (IndexError, ValueError) as e:
             #print(f"Error message: {e}")
             #print(f"If Error message started with zero-value, then {stock} was mentioned before available stock prices: {np.min(day_diff)}")
             #print(f"Error message was True label became NAN, then it was because no stock data existed after mention")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan, np.nan
 
     def _merge_parameters_and_labels(self, df_stockMentions_small, df_stockPrices_small, stock):
         parameters_stock, label_stock, perc_money, stock_list = list(), list(), list(), list()
         # For each mention in stock mentions compute parameters
         for i, date_of_mention in enumerate(df_stockMentions_small["date"].sort_values()):
 
-            price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, max_incr, max_decr = self._get_price_parameters_and_labels(
+            price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close = self._get_price_parameters_and_labels(
                 df_stockPrices_small, stock, date_of_mention)
 
             count_mentions_before, days_since_first, mentions_last_week, mentions_today, followers = self._get_mention_parameters(
@@ -107,12 +111,15 @@ class MLModel:
             # Save params in array
             params = np.asarray([price_today, price_avg_last_3_days, price_avg_last_7_days, count_mentions_before,
                                  days_since_first, mentions_last_week, mentions_today, followers])
-            # Save percentage money output in array
-            percentage_money = np.asarray([max_incr, max_decr])
 
             # Check for NANs and discard values if Nans
             if np.isnan(params).any():
                 continue
+
+            # Save percentage money output in array
+            while len(perc_after_close) != 31:
+                perc_after_close = np.concatenate((perc_after_close, np.expand_dims(np.asarray(np.nan), axis=0)))
+            percentage_money = np.asarray(perc_after_close)
 
             # Append parameters and true labels
             parameters_stock.append(params)
@@ -124,14 +131,6 @@ class MLModel:
                 break
         return np.asarray(parameters_stock), np.asarray(label_stock), np.asarray(perc_money), stock_list
 
-    def _z_score_norm(self, data_set):
-        if data_set == "train":
-            self.train_set_params = (self.train_set_params - np.mean(self.train_set_params, axis=0)) / np.std(
-                self.train_set_params, axis=0)
-        elif data_set == "test":
-            self.test_set_params = (self.test_set_params - np.mean(self.test_set_params, axis=0)) / np.std(
-                self.test_set_params, axis=0)
-
     def get_parameters_and_labels(self, data_set):
         if data_set == "train":
             stock_names = self.train_stocks
@@ -139,6 +138,8 @@ class MLModel:
             stock_names = self.test_stocks
         else:
             raise Exception(f"set should be test or train, not {data_set}")
+        # Shuffle list
+        random.Random(2).shuffle(stock_names)
         # For each stock
         for stock in stock_names:
             # If stock is not present, skip it
@@ -173,14 +174,17 @@ class MLModel:
                 self.train_set_params = np.concatenate((self.train_set_params, parameters_stock), axis=0)
                 self.train_set_labels = np.concatenate((self.train_set_labels, label_stock))
                 self.train_set_money = np.concatenate((self.train_set_money, percentage_money), axis=0)
-                self.stock_list += stock_list
+                self.stock_list_train += stock_list
             else:
                 self.test_set_params = np.concatenate((self.test_set_params, parameters_stock), axis=0)
                 self.test_set_labels = np.concatenate((self.test_set_labels, label_stock))
                 self.test_set_money = np.concatenate((self.test_set_money, percentage_money), axis=0)
+                self.stock_list_test += stock_list
 
-        # Apply z_score normalization
-        self._z_score_norm(data_set)
+        # For making the list for predefined splits to keep stocks in separated groups when doing CV
+        splits_idxs = np.array_split(np.arange(len(self.amount_of_stock_input)), 5)
+        for i, idxs in enumerate(splits_idxs):
+            self.stock_kfold_idxs += np.asarray(self.amount_of_stock_input)[idxs].sum() * [i]
 
 
 class MLModelV1(MLModel):
@@ -189,11 +193,24 @@ class MLModelV1(MLModel):
 
         self.svm = SVC(class_weight="balanced")
 
+    def z_score_norm(self, data_set):
+        if data_set == "train":
+            self.train_set_params = (self.train_set_params - np.mean(self.train_set_params, axis=0)) / np.std(
+                self.train_set_params, axis=0)
+        elif data_set == "test":
+            self.test_set_params = (self.test_set_params - np.mean(self.test_set_params, axis=0)) / np.std(
+                self.test_set_params, axis=0)
+        else:
+            raise Exception(f"set should be test or train, not {data_set}")
+
     def cv_score(self):
-        print(cross_val_score(SVC(class_weight="balanced"), self.train_set_params, self.train_set_labels))
+        cv_score = cross_validate(self.svm, self.train_set_params, self.train_set_labels,
+                                  cv=PredefinedSplit(self.stock_kfold_idxs), return_train_score=True)
+        train_score, test_score = cv_score["train_score"], cv_score["test_score"]
+        print(f"The training score was {train_score} and the validation score {test_score}")
 
     def cv_predict_similarity(self):
-        self.cv_predictions = cross_val_predict(SVC(class_weight="balanced"), self.train_set_params, self.train_set_labels)
+        self.cv_predictions = cross_val_predict(self.svm, self.train_set_params, self.train_set_labels)
         print(f"The predictions contained {len(np.nonzero(self.cv_predictions)[0])} buy commands and the actual buy commands"
               f" were {len(np.nonzero(self.train_set_labels)[0])}")
         print("---------------")
@@ -216,7 +233,8 @@ class MLModelV1(MLModel):
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             earnings_2.append(money_mask[idx])
-        print(f"If we only buy the stock with a high buy incentive. Then the earnings/loss over a month would be: {np.mean(earnings_2, axis=0)}")
+        print(f"If we only buy the stocks with a high buy incentive ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_2, axis=0)}")
         # If we bought all stocks the algorithm recommended
         mask_all = (self.cv_predictions != 0)
         money_mask = self.train_set_money[mask_all, :]
@@ -225,4 +243,86 @@ class MLModelV1(MLModel):
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             earnings_all.append(money_mask[idx])
-        print(f"If buy all the stocks recommended by the algorithm. Then the earnings/loss over a month would be: {np.mean(earnings_all, axis=0)}")
+        print(f"If buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_all, axis=0)}")
+
+
+class MLModelTree(MLModel):
+    def __init__(self, df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest):
+        super().__init__(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
+
+        self.tree = DecisionTreeClassifier(min_samples_leaf=9, max_depth=5, class_weight="balanced")
+
+    def cv_score(self):
+        cv_score = cross_validate(self.tree, self.train_set_params, self.train_set_labels,
+                                  cv=PredefinedSplit(self.stock_kfold_idxs), return_train_score=True)
+        train_score, test_score = cv_score["train_score"], cv_score["test_score"]
+        print(f"The training score was {np.mean(train_score)} and the validation score {np.mean(test_score)}")
+
+    def cv_predict_similarity(self):
+        self.cv_predictions = cross_val_predict(self.tree, self.train_set_params, self.train_set_labels)
+        print(f"The predictions contained {len(np.nonzero(self.cv_predictions)[0])} buy commands and the actual buy commands"
+              f" were {len(np.nonzero(self.train_set_labels)[0])}")
+        print("---------------")
+        perc_2 = len(np.nonzero(np.logical_and(self.cv_predictions != 0, self.train_set_labels == 2))[0]) / len(
+            np.nonzero(self.train_set_labels == 2)[0])
+        print(f"The predictions contained contained buy commands on {perc_2} percentage of the places where the growth "
+              f"exceeded 50 %")
+        print("---------------")
+        perc_2_both = len(np.nonzero(np.logical_and(self.cv_predictions == 2, self.train_set_labels == 2))[0]) / len(
+            np.nonzero(self.train_set_labels == 2)[0])
+        print(f"The predictions contained contained high buy commands on {perc_2_both} percentage of the places where "
+              f"the growth exceeded 50 %")
+
+    def money_out_train(self):
+        # If we only buy the ones where there are a big buy incentive
+        mask_2 = (self.cv_predictions == 2)
+        stock_mask = np.asarray(self.stock_list_train)[mask_2]
+        money_mask = self.train_set_money[mask_2, :]
+        earnings_2 = list()
+        for stock in np.unique(stock_mask):
+            idx = np.nonzero(stock_mask == stock)[0][0]
+            earnings_2.append(money_mask[idx])
+        print(f"If we only buy the stocks with a high buy incentive ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_2, axis=0)}")
+        # If we bought all stocks the algorithm recommended
+        mask_all = (self.cv_predictions != 0)
+        money_mask = self.train_set_money[mask_all, :]
+        stock_mask = np.asarray(self.stock_list_train)[mask_all]
+        earnings_all = list()
+        for stock in np.unique(stock_mask):
+            idx = np.nonzero(stock_mask == stock)[0][0]
+            earnings_all.append(money_mask[idx])
+        print(f"If we buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_all, axis=0)}")
+        return money_mask
+
+    def fit(self):
+        self.tree.fit(self.train_set_params, self.train_set_labels)
+
+    def get_test_results(self):
+        print(f"The test score was {self.tree.score(self.test_set_params, self.test_set_labels)}")
+        predictions = self.tree.predict(self.test_set_params)
+        self._money_out_test(predictions)
+
+    def _money_out_test(self, predictions):
+        # If we only buy the ones where there are a big buy incentive
+        mask_2 = (predictions == 2)
+        stock_mask = np.asarray(self.stock_list_test)[mask_2]
+        money_mask = self.test_set_money[mask_2, :]
+        earnings_2 = list()
+        for stock in np.unique(stock_mask):
+            idx = np.nonzero(stock_mask == stock)[0][0]
+            earnings_2.append(money_mask[idx])
+        print(f"If we only buy the stocks with a high buy incentive ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_2, axis=0)}")
+        # If we bought all stocks the algorithm recommended
+        mask_all = (predictions != 0)
+        money_mask = self.test_set_money[mask_all, :]
+        stock_mask = np.asarray(self.stock_list_test)[mask_all]
+        earnings_all = list()
+        for stock in np.unique(stock_mask):
+            idx = np.nonzero(stock_mask == stock)[0][0]
+            earnings_all.append(money_mask[idx])
+        print(f"If we buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
+              f"Then the earnings/loss over a month would be: {np.mean(earnings_all, axis=0)}")
