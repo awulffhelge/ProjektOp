@@ -1,4 +1,4 @@
-""" Projekt Op main script. GPVRF """
+""" Projekt Op main script"""
 
 
 import functions
@@ -17,8 +17,8 @@ most_common_words = list(joblib.load("most_common_words1000.joblib"))  # Read fi
 # Make a list of words to manually add
 not_stocks = ["fund", "per", "index", "tech", "ways", "corp", "uk", "tips", "dash", "im", "dow", "earn", "wins",
               "pros", "jobs", "away", "mini", "plus", "pure", "vice", "ai", "sub", "apps", "ups", "usd", "away",
-              "giga", "edit", "media", "gmc", "loop", "mp", "dphc", "pic", "gaxy", "gpvrf"]
-# Maybe list: joe, spaq, gene, cap, ma, ba, dal, riot, nflx, iq, rare, snap, net, wrap, bio, att
+              "giga", "edit", "media", "gmc", "loop", "mp", "dphc", "pic", "gaxy", "gpvrf", "loan", "cap", "loan"]
+# Maybe list: joe, spaq, gene, ma, ba, dal, riot, nflx, iq, rare, snap, net, wrap, bio, att
 # Add words if needed
 #joblib.dump(np.asarray([str(word) for word in most_common_words]), "most_common_words1000.joblib")
 
@@ -123,38 +123,23 @@ print(df_followers)
 """
 
 # Train model tree
-ml_model_tree = classes.MLModelTree(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
-ml_model_tree.get_parameters_and_labels("train")
-ml_model_tree.cv_score()
-ml_model_tree.cv_predict_similarity()
-ml_model_tree.money_out_train()
-ml_model_tree.fit()
+ml_model_forest = classes.MLModelForest(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
+ml_model_forest.get_parameters_and_labels("train")
+ml_model_forest.cv_score(lay=4, leaf=5, bootstrap=True)
+ml_model_forest.cv_predict_similarity()
+ml_model_forest.money_out_train(plot_it=False)
+ml_model_forest.fit()
+
+"""for lay in [3, 4, 5, 6]:
+    for leaf in [4, 5, 6, 7, 8, 9]:
+        print("")
+        print(f"Layers = {lay} and leafs = {leaf}")
+        ml_model_forest.cv_score(lay=lay, leaf=leaf, bootstrap=True)
+        ml_model_forest.cv_predict_similarity()
+        ml_model_forest.money_out_train(plot_it=False)"""
+
 
 # Test model tree
-ml_model_tree.get_parameters_and_labels("test")
-ml_model_tree.get_test_results()
+#ml_model_forest.get_parameters_and_labels("test")
+#ml_model_forest.get_test_results(plot_it=False)
 
-
-from sklearn.tree import plot_tree, export_text
-ml_model_tree.tree.fit(ml_model_tree.train_set_params, ml_model_tree.train_set_labels)
-print(export_text(ml_model_tree.tree))
-
-
-a = ml_model_tree.cv_predictions
-b = ml_model_tree.train_set_money[:, 0]
-c = ml_model_tree.stock_list
-d = pd.DataFrame({"guess": a, "price": b, "stock": c})
-
-some = ml_model_tree.train_set_params[a != 0, :]
-np.mean(some, axis=0)
-
-e = b[a == 2]
-f = np.asarray(c)[a == 2]
-earn = list()
-st = list()
-for i in np.unique(f):
-    idx = np.nonzero(f == i)[0][0]
-    earn.append(e[idx])
-
-earn = np.asarray(earn)
-np.asarray(earn)[earn < 2000]
