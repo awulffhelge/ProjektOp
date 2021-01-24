@@ -21,15 +21,15 @@ class MLModel:
         self.df_stockPrices = df_stockPrices
         self.df_youtubeSources = df_youtubeSources
 
-        self.train_set_params = np.empty((0, 7))
-        self.test_set_params = np.empty((0, 7))
+        self.train_set_params = np.empty((0, 8))
+        self.test_set_params = np.empty((0, 8))
         self.train_set_labels = np.empty(0)
         self.test_set_labels = np.empty(0)
         self.train_set_money = np.empty((0, 61))
         self.test_set_money = np.empty((0, 61))
 
         self.feature_names = ["price_today", "price_avg_last_3_days", "price_avg_last_7_days", "count_mentions_before",
-                              "days_since_first", "followers", "diff_mentions_before"]
+                              "days_since_first", "followers", "diff_mentions_before", "mentions_last_week"]
 
         self.stock_names = df_stockMentions["stock"].value_counts().index.values
 
@@ -67,7 +67,7 @@ class MLModel:
                                       np.logical_and(
                                           date_of_mention + pd.Timedelta(days=28) < df_stockMentions_small["date"],
                                           df_stockMentions_small["date"] < date_of_mention + pd.Timedelta(days=42))])
-        return count_mentions_before, days_since_first, followers, diff_mentions_before, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks
+        return count_mentions_before, days_since_first, followers, diff_mentions_before, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks, mentions_last_week
 
     def _get_price_parameters_and_labels(self, df_stockPrices_small, stock, date_of_mention):
         # See if the necessary stock price data is there
@@ -98,7 +98,13 @@ class MLModel:
             # converted to a three class problem of don't buy, buy, and buy many.
             max_increase = np.nanmax(perc_after_close.values[:46])
             max_decrease = np.nanmin(perc_after_close.values[:31])
-            if max_increase > 165:
+            if price_today < 10 and max_increase > 165:
+                true_label = 1
+            elif 10 < price_today < 20 and max_increase > 165:
+                true_label = 1
+            elif 20 < price_today < 40 and max_increase > 165:
+                true_label = 1
+            elif 40 < price_today and max_increase > 165:
                 true_label = 1
             elif np.isnan(max_increase):
                 raise ValueError("True label became NAN")
@@ -122,12 +128,12 @@ class MLModel:
             price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close = self._get_price_parameters_and_labels(
                 df_stockPrices_small, stock, date_of_mention)
 
-            count_mentions_before, days_since_first, followers, diff_mentions_before, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks = self._get_mention_parameters(
+            count_mentions_before, days_since_first, followers, diff_mentions_before, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks, mentions_last_week = self._get_mention_parameters(
                 df_stockMentions_small, date_of_mention)
 
             # Save params in array
             params = np.asarray([price_today, price_avg_last_3_days, price_avg_last_7_days, count_mentions_before,
-                                 days_since_first, followers, diff_mentions_before])
+                                 days_since_first, followers, diff_mentions_before, mentions_last_week])
 
             # Check for NANs and discard values if Nans
             if np.isnan(params).any():
@@ -494,14 +500,26 @@ class MLModelForest(MLModel):
         mask_all = (self.cv_predictions != 0)
         money_mask = self.train_set_money[mask_all, :]
         stock_mask = np.asarray(self.stock_list_train)[mask_all]
-        mentions_mask = np.asarray(self.mention_futures_train)[mask_all]
+        price_today = np.asarray(self.train_set_params[:, 0])[mask_all]
         sales_value = list()
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
-            sales_value.append(self._get_sales_value(non_nan_money, mentions_mask[idx], stock, plot_it))
+            sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it))
+
+        # Compute the earnings by remembering to multiply
+        average_time_to_sell = np.mean(np.asarray(sales_value)[:, 5])
+        rounds_per_six_month = int(np.floor(180 / average_time_to_sell))
+        remove_it = len(np.unique(stock_mask)) % rounds_per_six_month
+        if remove_it == 0:
+            first_part = np.mean(np.reshape(np.asarray(sales_value)[:, 4], (rounds_per_six_month, -1)), axis=1)
+        else:
+            first_part = np.mean(np.reshape(np.asarray(sales_value)[:-remove_it, 4], (rounds_per_six_month, -1)), axis=1)
+        #second_part = np.mean(sales_value[-remove_it:, 4])
+        final_earn = np.prod(first_part / 100)
+
         print(f"If we buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
-              f"Then the earnings/loss over a month would be: {np.mean(sales_value, axis=0)}")
+              f"Then the earnings/loss over a month would be: {np.mean(sales_value, axis=0)}, prod {final_earn}")
 
     def fit(self):
         self.forest.fit(self.train_set_params, self.train_set_labels)
@@ -525,17 +543,35 @@ class MLModelForest(MLModel):
         mask_all = (predictions != 0)
         money_mask = self.test_set_money[mask_all, :]
         stock_mask = np.asarray(self.stock_list_test)[mask_all]
-        mentions_mask = np.asarray(self.mention_futures_test)[mask_all]
+        price_today = np.asarray(self.test_set_params[:, 0])[mask_all]
         sales_value = list()
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
-            sales_value.append(self._get_sales_value(non_nan_money, mentions_mask[idx], stock, plot_it))
+            sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it))
+
+        # Compute the earnings by remembering to multiply
+        average_time_to_sell = np.mean(np.asarray(sales_value)[:, 5])
+        rounds_per_six_month = int(np.floor(180 / average_time_to_sell))
+        remove_it = len(np.unique(stock_mask)) % rounds_per_six_month
+        if remove_it == 0:
+            first_part = np.mean(np.reshape(np.asarray(sales_value)[:, 4], (rounds_per_six_month, -1)), axis=1)
+        else:
+            first_part = np.mean(np.reshape(np.asarray(sales_value)[:-remove_it, 4], (rounds_per_six_month, -1)),
+                                 axis=1)
+        # second_part = np.mean(sales_value[-remove_it:, 4])
+        final_earn = np.prod(first_part / 100)
+
         print(f"If we buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
-              f"Then the earnings/loss over a month would be: {np.mean(sales_value, axis=0)}")
+              f"Then the earnings/loss over a month would be: {np.mean(sales_value, axis=0)}, prod {final_earn}")
 
     def _get_sales_value_mentions(self, val, mentions_fut, stock, plot_it=False):
-        sales_incr = 65
+        if val[0] < 10:
+            sales_incr = 65
+        elif val[0] < 20:
+            sales_incr = 45
+        else:
+            sales_incr = 30
         if plot_it:
             plt.ion()
             plt.figure()
@@ -598,9 +634,16 @@ class MLModelForest(MLModel):
             plt.vlines(our_sell1, 97, 110, color="r")
         return val[top_val1], top_val1, val[last_val1], last_val1, val[our_sell1], our_sell1
 
-    def _get_sales_value(self, val, mentions_fut, stock, plot_it=False):
+    def _get_sales_value(self, val, price_today, stock, plot_it=False):
+        if price_today < 10:
+            sales_incr = 65
+        elif price_today < 20:
+            sales_incr = 65
+        elif price_today < 40:
+            sales_incr = 65
+        else:
+            sales_incr = 65
         # Set parameters
-        sales_incr = 65
         low = 80
 
         # Compute moving average window of 9
@@ -620,7 +663,7 @@ class MLModelForest(MLModel):
             plt.plot(val, label="Raw")
             plt.plot(mov_avg, label="Mov_avg")
             plt.plot(ema, label="EMA")
-            plt.title(stock + str(mentions_fut))
+            plt.title(stock)
             plt.legend()
             plt.draw()
         # Compute cumulative value 4 values back

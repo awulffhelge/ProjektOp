@@ -130,16 +130,30 @@ ml_model_forest.cv_predict_similarity()
 ml_model_forest.money_out_train(plot_it=False)
 ml_model_forest.fit()
 
-"""for lay in [3, 4, 5, 6]:
+print(ml_model_forest.feature_names)
+print(ml_model_forest.forest.feature_importances_)
+
+"""for lay in [3, 4, 5, 6, 7]:
     for leaf in [4, 5, 6, 7, 8, 9]:
         print("")
         print(f"Layers = {lay} and leafs = {leaf}")
         ml_model_forest.cv_score(lay=lay, leaf=leaf, bootstrap=True)
         ml_model_forest.cv_predict_similarity()
-        ml_model_forest.money_out_train(plot_it=False)"""
-
+        ml_model_forest.money_out_train(plot_it=False)
+"""
 
 # Test model tree
-#ml_model_forest.get_parameters_and_labels("test")
-#ml_model_forest.get_test_results(plot_it=False)
+ml_model_forest.get_parameters_and_labels("test")
+ml_model_forest.get_test_results(plot_it=False)
 
+buy_price = ml_model_forest.train_set_params[:, 0]
+money = ml_model_forest.train_set_money[:, :45]
+intervals = [0, 10, 20, 40, 80, 200]
+
+for i in range(len(intervals) - 1):
+    idxs = np.logical_and(buy_price > intervals[i], buy_price < intervals[i + 1])
+    max = np.nanmax(money[idxs], axis=1).mean()
+    min = np.nanmin(money[idxs], axis=1).mean()
+    mean = np.nanmean(money[idxs], axis=1).mean()
+    print(f"In the interval {intervals[i]} to {intervals[i + 1]} there were {len(money[idxs])} stocks the avg. max were "
+          f"{max}, the avg. min were {min}, and the avg. mean was {mean}")
