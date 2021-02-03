@@ -91,20 +91,3 @@ else:
     ml_model_forest.get_new_buys()
     # Save model and last check time
     joblib.dump([ml_model_forest, pd.Timestamp.today()], "moneyModel.joblib")
-
-# Visualize stuff
-"""# Only visualize a single channel
-visualize_channel = "RexFinance"
-if visualize_channel:
-    youtuber_id = df_youtubeSources["id"][df_youtubeSources["name"] == visualize_channel].item()
-    df_stockMentions = df_stockMentions[df_stockMentions["source"] == youtuber_id]
-    # Get array containing names of all stocks
-    stock_names = df_stockMentions["stock"].unique()
-
-# Visualize stocks and mentions over time
-for stock in stock_names[60:120]:
-    # Only take the relevant mentions
-    df_mentions = df_stockMentions[df_stockMentions["stock"] == stock]
-    # Plot a stock
-    plots.plot_mentions_and_stocks_together(df_mentions, stock, start_date, df_stockPrices[stock])
-"""

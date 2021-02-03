@@ -33,5 +33,20 @@ def plot_mentions_and_stocks_together(df_mentions, stock, start_date, df_ticker)
         print(e)
 
 
+# Part of some old plots which were run from main.
+"""# Only visualize a single channel
+visualize_channel = "RexFinance"
+if visualize_channel:
+    youtuber_id = df_youtubeSources["id"][df_youtubeSources["name"] == visualize_channel].item()
+    df_stockMentions = df_stockMentions[df_stockMentions["source"] == youtuber_id]
+    # Get array containing names of all stocks
+    stock_names = df_stockMentions["stock"].unique()
 
+# Visualize stocks and mentions over time
+for stock in stock_names[60:120]:
+    # Only take the relevant mentions
+    df_mentions = df_stockMentions[df_stockMentions["stock"] == stock]
+    # Plot a stock
+    plots.plot_mentions_and_stocks_together(df_mentions, stock, start_date, df_stockPrices[stock])
+"""
 

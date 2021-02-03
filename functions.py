@@ -186,7 +186,6 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
         bool_mask = df_youtubeVideos["date"] > pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1)
     else:
         bool_mask = df_youtubeVideos["date"] > last_check
-
     stock_names_new = df_youtubeVideos["stock"][bool_mask].value_counts().index.values
 
     # Split into test and training, and append new stocks
@@ -198,11 +197,24 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     df_traintest = pd.DataFrame({"data_set": traintest_param}, index=traintest_stock)
 
     # Get stock data for stocks mentioned more than twice
-    df_stockPrices = get_stock_data(traintest_stock, start_date)
+    if last_check == pd.Timestamp(2020, 7, 1):
+        df_stockPrices = get_stock_data(traintest_stock, start_date)
+    else:
+        df_stockPrices = get_stock_data(stock_names_new, start_date)
 
-    # Get performance of youtubers
-    df_performance = get_best_youtubers(df_youtubeSources, df_youtubeVideos, df_traintest, df_stockPrices.transpose())
-    # Keep only the 25 best youtubers in df_youtubeVideos and df_youtubeSources
+    if last_check == pd.Timestamp(2020, 7, 1):
+        # Get performance of youtubers
+        df_performance = get_best_youtubers(df_youtubeSources, df_youtubeVideos[np.logical_and(
+            df_youtubeVideos["date"] > start_date, df_youtubeVideos["date"] < end_date)], df_traintest, df_stockPrices.transpose())
+    else:
+        # Get access to sqlite data base
+        con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
+        # Get Dataframe
+        df_performance = pd.read_sql_query("SELECT * from df_performance", con)
+        # Close connection
+        con.close()
+
+    # Keep only the 30 best youtubers in df_youtubeVideos and df_youtubeSources
     keep_youtuber = df_performance.Name[:30]
     keep_youtuber = keep_youtuber.apply(lambda x: df_youtubeSources["id"][df_youtubeSources.name == x].values[0]).values
     df_youtubeVideos = df_youtubeVideos.merge(pd.DataFrame({"keep": keep_youtuber}), left_on="source", right_on="keep")
@@ -211,9 +223,11 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     # Get access to sqlite data base
     con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
     # Write to sqlite data base
-    df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
-    df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
-    df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
+    if last_check == pd.Timestamp(2020, 7, 1):
+        df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
+        df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
+        df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
+        df_performance.to_sql("df_performance", con, if_exists="replace")
     df_stockPrices.to_sql("stockPrices", con, if_exists="replace")
     # Close connection
     con.close()
@@ -234,7 +248,6 @@ def get_stock_data(stock_names, start_date):
             print(f"{stock} not loaded, error message: {e}")
             continue
         df[stock] = df_ticker
-
     return df.transpose()
 
 

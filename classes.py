@@ -268,6 +268,7 @@ class MLModelForest(MLModel):
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
+            print(price_today[idx])
             sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it, thrs))
 
         # Compute the earnings by remembering to multiply them over time (renters rente)
@@ -310,6 +311,7 @@ class MLModelForest(MLModel):
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
             non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
+            print(price_today[idx])
             sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it))
 
         # Compute the earnings by remembering to multiply
@@ -433,7 +435,9 @@ class MLModelForest(MLModel):
         self.get_parameters_and_labels(data_set="since_last", end_date=None)
 
         if len(self.stock_list_since_last) == 0:
+            print("----------------------------------------")
             print("No stocks were considered since last run")
+            print("----------------------------------------")
         else:
             # Use model to predict
             predictions = self.forest.predict(self.since_last_set_params).astype(np.int64)
@@ -458,4 +462,7 @@ class MLModelForest(MLModel):
             df_csv.to_csv("algorithm_predictions.csv")
 
             # Print results
-            print(f"The following stocks should be bought: {np.asarray(self.stock_list_since_last)[np.nonzero(predictions)]}")
+            print("----------------------------------------")
+            print(f"Considering: {self.stock_list_since_last}")
+            print(f"Buy it! BUY IT, GODDAMMIT!!!: {np.asarray(self.stock_list_since_last)[np.nonzero(predictions)]}")
+            print("----------------------------------------")
