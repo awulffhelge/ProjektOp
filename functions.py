@@ -224,10 +224,10 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
     # Write to sqlite data base
     if last_check == pd.Timestamp(2020, 7, 1):
-        df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
-        df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
-        df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
         df_performance.to_sql("df_performance", con, if_exists="replace")
+    df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
+    df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
+    df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
     df_stockPrices.to_sql("stockPrices", con, if_exists="replace")
     # Close connection
     con.close()

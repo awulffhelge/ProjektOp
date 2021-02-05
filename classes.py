@@ -446,15 +446,16 @@ class MLModelForest(MLModel):
             df_csv = pd.DataFrame(self.since_last_set_params, columns=self.feature_names)
             df_csv["ticker"] = self.stock_list_since_last
             sources = list()
-            for stock in self.stock_list_since_last:
+            idxs = np.unique(self.stock_list_since_last, return_index=True)[1]
+            stock_list = [self.stock_list_since_last[index] for index in sorted(idxs)]
+            for stock in stock_list:
                 df_helper = self.df_stockMentions[self.df_stockMentions["stock"] == stock[0]]
-                df_helper = df_helper["source"][df_helper["date"] > pd.Timestamp.today() - pd.Timedelta(hours=36)]
-                sources_intern = list()
+                df_helper = df_helper["source"][df_helper["date"] > pd.Timestamp.today() - pd.Timedelta(hours=48)]
                 for source in df_helper.values:
-                    sources_intern.append(self.df_youtubeSources["name"][self.df_youtubeSources["id"] == source].item())
-                sources.append(sources_intern)
+                    sources.append(self.df_youtubeSources["name"][self.df_youtubeSources["id"] == source].item())
             df_csv["source"] = sources
-            df_csv["date_of_buy"] = [pd.Timestamp.today()] * len(predictions)
+            df_csv["date_of_prediction"] = [pd.Timestamp.today().date()] * len(predictions)
+            df_csv["time_of_prediction"] = [pd.Timestamp.today()] * len(predictions)
             df_csv["predictions"] = predictions
             if os.path.isfile("algorithm_predictions.csv"):
                 df = pd.read_csv("algorithm_predictions.csv").drop(columns="Unnamed: 0")

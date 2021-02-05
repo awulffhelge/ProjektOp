@@ -1,0 +1,6 @@
+,price_today,price_avg_last_3_days,price_avg_last_7_days,days_since_first,followers,ticker,source,date_of_buy,predictions
+0,13.99,99.57112223,99.00500357,108,0,['BSE'],['ProCapital.MohdFaiz'],2/1/2021,0
+1,9.77,112.1460252,128.4105863,41,10900,['UAVS'],['StockFlix'],2/1/2021,1
+2,21.4,86.37071651,77.0293725,66,10900,['THCB'],['StockFlix'],2/3/2021,1
+3,118.87,98.05950478,100.4410581,176,40000,['GRMN'],['DONGXii - The China Opportunity'],2/3/2021,0
+0,1.39,97.36211031,97.327852,26,7700,['TBLT'],['Courtside Financial'],2/4/2021,0

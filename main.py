@@ -86,8 +86,10 @@ else:
     # Load model and last check time
     ml_model_forest, last_check = joblib.load("moneyModel.joblib")
     # Update data base
-    ml_model_forest.update_database(most_common_words, last_check)
+    ml_model_forest.update_database(most_common_words, pd.Timestamp(2020,1,1))
+    input("Press Enter to predict and save...")
     # Predict which stocks to buy
     ml_model_forest.get_new_buys()
     # Save model and last check time
+    print("Saving...")
     joblib.dump([ml_model_forest, pd.Timestamp.today()], "moneyModel.joblib")

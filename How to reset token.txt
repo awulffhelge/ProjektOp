@@ -1,0 +1,8 @@
+%userprofile%/.credentials
+
+prøv at gå til den sti.. Hvis du åbner en tilfældig mappe og indsætter det i stien og
+trykker enter
+
+Så burde der være en fil der hedder "youtube-go-quickstart.json". den skal du bare slette
+ og så kører programmet igen.. Som første gang skal du så åbne en browser og gå til den
+ URL den skriver i command prompt. Logge ind, kopier token og indsætte det i command prompt
