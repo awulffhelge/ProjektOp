@@ -182,10 +182,7 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     stock_names_trandte = df_youtubeVideos["stock"][bool_mask].value_counts()
     stock_names_trandte = stock_names_trandte[stock_names_trandte > 2].index.values
     # Extract new_stocks
-    if last_check < pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1):
-        bool_mask = df_youtubeVideos["date"] > pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1)
-    else:
-        bool_mask = df_youtubeVideos["date"] > last_check
+    bool_mask = df_youtubeVideos["date"] > last_check
     stock_names_new = df_youtubeVideos["stock"][bool_mask].value_counts().index.values
 
     # Split into test and training, and append new stocks

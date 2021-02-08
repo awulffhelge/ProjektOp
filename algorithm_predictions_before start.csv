@@ -1,6 +1,22 @@
-,price_today,price_avg_last_3_days,price_avg_last_7_days,days_since_first,followers,ticker,source,date_of_buy,predictions
-0,13.99,99.57112223,99.00500357,108,0,['BSE'],['ProCapital.MohdFaiz'],2/1/2021,0
-1,9.77,112.1460252,128.4105863,41,10900,['UAVS'],['StockFlix'],2/1/2021,1
-2,21.4,86.37071651,77.0293725,66,10900,['THCB'],['StockFlix'],2/3/2021,1
-3,118.87,98.05950478,100.4410581,176,40000,['GRMN'],['DONGXii - The China Opportunity'],2/3/2021,0
-0,1.39,97.36211031,97.327852,26,7700,['TBLT'],['Courtside Financial'],2/4/2021,0
+,price_today,price_avg_last_3_days,price_avg_last_7_days,days_since_first,followers,ticker,source,date_of_buy,predictions,
+0,13.99,99.57112223,99.00500357,108,0,['BSE'],['ProCapital.MohdFaiz'],2/1/2021,0,
+1,9.77,112.1460252,128.4105863,41,10900,['UAVS'],['StockFlix'],2/1/2021,1,
+2,21.4,86.37071651,77.0293725,66,10900,['THCB'],['StockFlix'],2/3/2021,1,
+3,118.87,98.05950478,100.4410581,176,40000,['GRMN'],['DONGXii - The China Opportunity'],2/3/2021,0,
+0,1.39,97.36211031,97.327852,26,7700,['TBLT'],['Courtside Financial'],2/4/2021,0,
+,price_today,price_avg_last_3_days,price_avg_last_7_days,days_since_first,followers,ticker,source,date_of_prediction,time_of_prediction,predictions
+0,20.8,49.29487179,40.96840659,21,49700,['CPSH'],Touchdown Trades,2/5/2021,24:19.6,0
+1,13.19,97.80136467,94.90956352,202,85900,['ERIC'],JT Wealth,2/5/2021,24:19.6,0
+2,20.25,96.03292181,95.42151675,218,136000,['IMO'],Deadnsyde,2/5/2021,24:19.6,0
+3,1.1,96.36363636,97.66233766,17,121000,['GSAT'],Mcash,2/5/2021,24:19.6,0
+4,47.33,95.71096556,94.45232562,119,0,['MPC'],ProCapital.MohdFaiz,2/5/2021,24:19.6,0
+5,337.23,97.76907946,97.52013251,85,77500,['LMT'],Positive Investing,2/5/2021,24:19.6,0
+6,1.39,85.85131894,84.58376156,15,7700,['UXIN'],Courtside Financial,2/5/2021,24:19.6,0
+7,1.5,73.77777778,67.40095238,24,11900,['ZOM'],StockFlix,2/5/2021,24:19.6,1
+8,1.5,73.77777778,67.40095238,25,318000,['ZOM'],Chris Sain,2/5/2021,24:19.6,1
+9,41.89,97.77989974,99.85335743,29,11900,['ARGO'],StockFlix,2/5/2021,24:19.6,0
+10,2.4,92.36111111,93.51190476,9,27300,['TTOO'],Doctor Dean Investing,2/5/2021,24:19.6,0
+11,1.62,101.8518519,98.7654321,32,44100,['CHEK'],Richard Allan,2/6/2021,21:11.9,0
+12,54.17,85.02246016,79.93881695,42,27300,['DMTK'],Doctor Dean Investing,2/7/2021,20:57.7,0
+13,32.37,97.94047987,94.8276623,188,27500,['BAC'],JMac Investing,2/7/2021,20:57.7,0
+14,84.91,99.7055706,98.05340108,118,0,['GRID'],ProCapital.MohdFaiz,2/7/2021,20:57.7,0

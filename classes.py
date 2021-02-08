@@ -129,12 +129,12 @@ class MLModel:
             #print(f"Error message was True label became NAN, then it was because no stock data existed after mention")
             return np.nan, np.nan, np.nan, np.nan, np.nan
 
-    def _merge_parameters_and_labels(self, df_stockMentions_small, df_stockPrices_small, stock, data_set):
+    def _merge_parameters_and_labels(self, df_stockMentions_small, df_stockPrices_small, stock, data_set, last_check):
         parameters_stock, label_stock, perc_money, stock_list, mention_fut = list(), list(), list(), list(), list()
         # For each mention in stock mentions compute parameters
         for i, date_of_mention in enumerate(df_stockMentions_small["date"].sort_values()):
 
-            if i < 2 or data_set == "since_last" and date_of_mention < pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1):
+            if i < 2 or data_set == "since_last" and date_of_mention < last_check:
                 continue
             elif i > 6:
                 break
@@ -167,7 +167,7 @@ class MLModel:
 
         return np.asarray(parameters_stock), np.asarray(label_stock), np.asarray(perc_money), stock_list, mention_fut
 
-    def get_parameters_and_labels(self, data_set, end_date):
+    def get_parameters_and_labels(self, data_set, end_date, last_check=pd.Timestamp(2020,1,1)):
         if data_set == "train":
             stock_names = self.train_stocks
         elif data_set == "test":
@@ -200,7 +200,7 @@ class MLModel:
             # Get parameters and labels for the stock
             parameters_stock, label_stock, percentage_money, stock_list, mention_fut = self._merge_parameters_and_labels(df_stockMentions_small,
                                                                                                 df_stockPrices_small,
-                                                                                                stock, data_set)
+                                                                                                stock, data_set, last_check)
 
             # Check that there was an actual output from the stock and expand dim if the output was 1D
             if len(label_stock) == 0:
@@ -426,13 +426,13 @@ class MLModelForest(MLModel):
         self.df_youtubeSources = df_youtubeSources
         self.new_stocks = df_trainTest["index"][df_trainTest["data_set"] == "since_last"].values
 
-    def get_new_buys(self):
+    def get_new_buys(self, last_check):
         # Remove previous computed parameters and stocks
         self.since_last_set_params = np.empty((0, 5))
         self.stock_list_since_last = list()
 
         # Compute input parameters for newest mentions
-        self.get_parameters_and_labels(data_set="since_last", end_date=None)
+        self.get_parameters_and_labels(data_set="since_last", end_date=None, last_check=last_check)
 
         if len(self.stock_list_since_last) == 0:
             print("----------------------------------------")
@@ -446,14 +446,24 @@ class MLModelForest(MLModel):
             df_csv = pd.DataFrame(self.since_last_set_params, columns=self.feature_names)
             df_csv["ticker"] = self.stock_list_since_last
             sources = list()
+            mention_num = list()
             idxs = np.unique(self.stock_list_since_last, return_index=True)[1]
             stock_list = [self.stock_list_since_last[index] for index in sorted(idxs)]
             for stock in stock_list:
                 df_helper = self.df_stockMentions[self.df_stockMentions["stock"] == stock[0]]
-                df_helper = df_helper["source"][df_helper["date"] > pd.Timestamp.today() - pd.Timedelta(hours=48)]
-                for source in df_helper.values:
+                # If df_helper is larger than 7 then cut down to the first seven to avoid problems with same day mention
+                if len(df_helper) > 7:
+                    df_helper = df_helper.sort_values("date").iloc[:7]
+                # Get whole len
+                whole_len = len(df_helper)
+                # Reduce to keep only the new mentions
+                df_helper = df_helper["source"][df_helper["date"] > last_check]
+                # Get the source name(s)
+                for i, source in enumerate(df_helper.values):
                     sources.append(self.df_youtubeSources["name"][self.df_youtubeSources["id"] == source].item())
+                    mention_num.append(whole_len - (len(df_helper.values) - i - 1))
             df_csv["source"] = sources
+            df_csv["num_of_mention"] = mention_num
             df_csv["date_of_prediction"] = [pd.Timestamp.today().date()] * len(predictions)
             df_csv["time_of_prediction"] = [pd.Timestamp.today()] * len(predictions)
             df_csv["predictions"] = predictions
@@ -465,5 +475,8 @@ class MLModelForest(MLModel):
             # Print results
             print("----------------------------------------")
             print(f"Considering: {self.stock_list_since_last}")
-            print(f"Buy it! BUY IT, GODDAMMIT!!!: {np.asarray(self.stock_list_since_last)[np.nonzero(predictions)]}")
+            if len(np.asarray(self.stock_list_since_last)[np.nonzero(predictions)]) == 0:
+                print("Nothing here of any value.")
+            else:
+                print(f"Buy it! BUY IT, GODDAMMIT!!!: {np.asarray(self.stock_list_since_last)[np.nonzero(predictions)]}")
             print("----------------------------------------")

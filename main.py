@@ -85,11 +85,14 @@ if not os.path.isfile("moneyModel.joblib"):
 else:
     # Load model and last check time
     ml_model_forest, last_check = joblib.load("moneyModel.joblib")
+    # Change last_check if it is too long ago
+    if last_check < pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1):
+        last_check = pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1)
     # Update data base
-    ml_model_forest.update_database(most_common_words, pd.Timestamp(2020,1,1))
+    ml_model_forest.update_database(most_common_words, last_check)
     input("Press Enter to predict and save...")
     # Predict which stocks to buy
-    ml_model_forest.get_new_buys()
+    ml_model_forest.get_new_buys(last_check)
     # Save model and last check time
     print("Saving...")
     joblib.dump([ml_model_forest, pd.Timestamp.today()], "moneyModel.joblib")
