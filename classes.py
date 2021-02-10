@@ -420,6 +420,8 @@ class MLModelForest(MLModel):
         df_stockPrices.index = timestamps
         # Convert dates to Timestamp
         df_stockMentions["date"] = df_stockMentions["date"].apply(lambda x: pd.Timestamp(x))
+        # Keep only the stocks mentioned during the last 6 months
+        df_stockMentions = df_stockMentions[df_stockMentions["date"] > pd.Timestamp.today() - pd.Timedelta(weeks=26)]
 
         self.df_stockMentions = df_stockMentions
         self.df_stockPrices = df_stockPrices
