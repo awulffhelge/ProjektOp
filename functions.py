@@ -219,13 +219,9 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
         # Get performance of youtubers
         df_performance = get_best_youtubers(df_youtubeSources, df_youtubeVideos[np.logical_and(
             df_youtubeVideos["date"] > start_date, df_youtubeVideos["date"] < end_date)], df_traintest, df_stockPrices.transpose())
+        joblib.dump(df_performance, "df_performance.joblib")
     else:
-        # Get access to sqlite data base
-        con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
-        # Get Dataframe
-        df_performance = pd.read_sql_query("SELECT * from df_performance", con)
-        # Close connection
-        con.close()
+        df_performance = joblib.load("df_performance.joblib")
 
     # Keep only the 30 best youtubers in df_youtubeVideos and df_youtubeSources
     keep_youtuber = df_performance.Name[:30]
@@ -236,8 +232,7 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     # Get access to sqlite data base
     con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
     # Write to sqlite data base
-    if last_check == pd.Timestamp(2020, 7, 1):
-        df_performance.to_sql("df_performance", con, if_exists="replace")
+
     df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
     df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
     df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")
