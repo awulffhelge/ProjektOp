@@ -33,16 +33,12 @@ if not os.path.isfile("moneyModel.joblib"):
                                       end_date=end_date)
 
     # Load data sets
-    con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
+    con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks_training.db")
     df_stockMentions = pd.read_sql_query("SELECT * from stockMentions", con)
     df_youtubeSources = pd.read_sql_query("SELECT * from youtubeSources", con)
     df_stockPrices = pd.read_sql_query("SELECT * from stockPrices", con)
     df_trainTest = pd.read_sql_query("SELECT * from stockTrainOrTestSet", con)
     con.close()
-
-    # Make Date column in stockPrices into Timestamps and set it as index
-    #df_stockPrices["index"] = df_stockPrices["index"].apply(lambda x: pd.Timestamp(x))
-    #df_stockPrices = df_stockPrices.set_index("index")
 
     # Transpose Dataframe and str index in stockPrices into Timestamps
     df_stockPrices = df_stockPrices.set_index("index").transpose()
@@ -61,7 +57,7 @@ if not os.path.isfile("moneyModel.joblib"):
     # Train model tree
     ml_model_forest = classes.MLModelForest(df_stockMentions, df_stockPrices, df_youtubeSources, df_trainTest)
     ml_model_forest.get_parameters_and_labels("train", end_date=end_date)
-    ml_model_forest.cv_score(lay=3, leaf=9, bootstrap=True)
+    ml_model_forest.cv_score(lay=3, leaf=5, bootstrap=True)
     ml_model_forest.cv_predict_similarity()
     ml_model_forest.money_out_train(plot_it=False, thrs=1000)
     ml_model_forest.fit()
@@ -69,30 +65,30 @@ if not os.path.isfile("moneyModel.joblib"):
     print(ml_model_forest.feature_names)
     print(ml_model_forest.forest.feature_importances_)
 
-    """for lay in [50, 55, 60, 65, 70, 75]:
-        print("")
-        print(f"Layers = {lay} and leafs = {9}")
-        ml_model_forest.cv_score(lay=3, leaf=9, bootstrap=True)
-        ml_model_forest.cv_predict_similarity()
-        ml_model_forest.money_out_train(plot_it=False, thrs=lay)"""
+    """for lay in [2, 3, 4, 5, 6]:
+        for leaf in [3, 5, 7, 9, 11]:
+            print("")
+            print(f"Layers = {lay} and leafs = {leaf}")
+            ml_model_forest.cv_score(lay=lay, leaf=leaf, bootstrap=True)
+            ml_model_forest.cv_predict_similarity()
+            ml_model_forest.money_out_train(plot_it=False, thrs=1000)"""
 
     # Test model tree
     ml_model_forest.get_parameters_and_labels("test", end_date=end_date)
     ml_model_forest.get_test_results(plot_it=False)
 
-    joblib.dump([ml_model_forest, end_date], "moneyModel.joblib")
+    joblib.dump(ml_model_forest, "moneyModel.joblib")
 
 else:
-    # Load model and last check time
-    ml_model_forest, last_check = joblib.load("moneyModel.joblib")
-    # Change last_check if it is too long ago
-    if last_check < pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1):
-        last_check = pd.Timestamp(pd.Timestamp.today().date()) - pd.Timedelta(days=1)
+    # Get time for last check
+    if os.path.isfile("algorithm_predictions.csv"):
+        df = pd.read_csv("algorithm_predictions.csv").drop(columns="Unnamed: 0")
+        last_check = pd.Timestamp(df["time_of_prediction"].iloc[-1])
+    else:
+        last_check = pd.Timestamp(2021, 1, 1)
+    # Load model
+    ml_model_forest = joblib.load("moneyModel.joblib")
     # Update data base
     ml_model_forest.update_database(most_common_words, last_check)
-    input("Press Enter to predict and save...")
     # Predict which stocks to buy
     ml_model_forest.get_new_buys(last_check)
-    # Save model and last check time
-    print("Saving...")
-    joblib.dump([ml_model_forest, pd.Timestamp.today()], "moneyModel.joblib")

@@ -48,7 +48,7 @@ def get_stock_prices(ticker_symbol, start_date, finnhub_client):
     # Convert to Pandas Dataframe
     df_finnhub = pd.DataFrame(res)
     timestamp_index = df_finnhub["t"].apply(lambda x: pd.Timestamp(pd.to_datetime(x, unit='s', origin='unix').date()))
-    df_ticker = pd.DataFrame(df_finnhub["c"].values, index=timestamp_index.values)
+    df_ticker = pd.DataFrame(df_finnhub["o"].values, index=timestamp_index.values)
     return df_ticker
 
 
@@ -69,7 +69,7 @@ def get_stock_data(stock_names, start_date):
         # Get prices of stock and save them in a pd.DataFrame
         try:
             _, df_ticker = get_stock_percentage(stock, start_date, finnhub_client)
-        except (IndexError, ValueError) as e:
+        except (IndexError, ValueError, FloatingPointError) as e:
             print(f"{stock} not loaded, error message: {e}")
             continue
         df[stock] = df_ticker
@@ -230,9 +230,11 @@ def construct_data_base(most_common_words, start_date, end_date, last_check=pd.T
     df_youtubeVideos = df_youtubeVideos.drop(columns="keep")
 
     # Get access to sqlite data base
-    con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
+    if last_check == pd.Timestamp(2020, 7, 1):
+        con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks_training.db")
+    else:
+        con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
     # Write to sqlite data base
-
     df_youtubeVideos.to_sql("stockMentions", con, if_exists="replace")
     df_youtubeSources.to_sql("youtubeSources", con, if_exists="replace")
     df_traintest.to_sql("stockTrainOrTestSet", con, if_exists="replace")

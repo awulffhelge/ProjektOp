@@ -1,5 +1,4 @@
-""" Classes
-Comments and to-do's: How many different youtuberes mentioned the stock """
+""" Classes """
 
 
 import numpy as np
@@ -22,9 +21,9 @@ class MLModel:
         self.df_stockPrices = df_stockPrices
         self.df_youtubeSources = df_youtubeSources
 
-        self.train_set_params = np.empty((0, 5))
-        self.test_set_params = np.empty((0, 5))
-        self.since_last_set_params = np.empty((0, 5))
+        self.train_set_params = np.empty((0, 9))
+        self.test_set_params = np.empty((0, 9))
+        self.since_last_set_params = np.empty((0, 9))
 
         self.train_set_labels = np.empty(0)
         self.test_set_labels = np.empty(0)
@@ -32,8 +31,9 @@ class MLModel:
         self.train_set_money = np.empty((0, 61))
         self.test_set_money = np.empty((0, 61))
 
-        self.feature_names = ["price_today", "price_avg_last_3_days", "price_avg_last_7_days","days_since_first",
-                              "followers"]
+        self.feature_names = ["price_today", "price_avg_last_3_days", "price_avg_last_7_days", "days_since_first",
+                              "followers", "price_avg_last_30_days", "num_mentions_before", "diff_num_youtuber",
+                              "mentions_last_week"]
 
         self.stock_names = df_stockMentions["stock"].value_counts().index.values
 
@@ -47,6 +47,8 @@ class MLModel:
         self.stock_list_train = list()
         self.stock_list_test = list()
         self.stock_list_since_last = list()
+
+        self.mention_dates_since_last = np.empty(0)
 
         self.mention_futures_train = list()
         self.mention_futures_test = list()
@@ -77,12 +79,17 @@ class MLModel:
         return count_mentions_before, days_since_first, followers, diff_mentions_before, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks, mentions_last_week
 
     def _get_price_parameters_and_labels(self, df_stockPrices_small, stock, date_of_mention, data_set):
+        # Add time to date to ensure that the mention is related to the correct opening price
+        if data_set == "since_last":
+            date_of_mention = date_of_mention + pd.Timedelta(hours=2, minutes=30)
+        else:
+            date_of_mention = date_of_mention + pd.Timedelta(hours=8, minutes=25)
         # See if the necessary stock price data is there
         try:
             # Find the difference between the date_of_mention and all days with stock prices
             day_diff = df_stockPrices_small.dropna().index - pd.Timestamp(date_of_mention.date())
             # Find the closing days, even if weekend
-            closing_day = df_stockPrices_small.dropna()[day_diff < pd.Timedelta(days=1)].index.values.max()
+            closing_day = df_stockPrices_small.dropna()[day_diff > - pd.Timedelta(days=1)].index.values.min()
             # Check that the minimum distance to a day with prices is 1 day
             days_to_closest = abs(df_stockPrices_small.dropna().index - pd.Timestamp(date_of_mention.date())).min()
             if days_to_closest > pd.Timedelta(days=2):
@@ -95,59 +102,64 @@ class MLModel:
             perc_after_close = percentage_price.loc[percentage_price.index > closing_day]
 
             # Compute avg price change last 3 days where the stocks were open
-            if len(perc_before_close) == 0:
+            if len(perc_before_close) <= 7:
                 price_avg_last_3_days = 100  # 100 percent
                 price_avg_last_7_days = 100  # 100 percent
+                price_avg_last_30_days = 100  # 100 percent
             else:
+                # Compute avg price change last days where the stocks were open
                 price_avg_last_3_days = np.mean(perc_before_close.values[-3:])
-                # Compute avg price change last 7 days where the stocks were open
                 price_avg_last_7_days = np.mean(perc_before_close.values[-7:])
+                price_avg_last_30_days = np.mean(perc_before_close.values[-30:])
             if data_set == "since_last":
-                return price_today, price_avg_last_3_days, price_avg_last_7_days, np.nan, np.asarray([0])
+                return (price_today, price_avg_last_3_days, price_avg_last_7_days,
+                        date_of_mention - pd.Timedelta(hours=2, minutes=30), np.asarray([0]), price_avg_last_30_days)
             if perc_after_close.isnull().all():
                 raise ValueError("True label became NAN")
             # Compute true label. True label is defined as the maximum stock increase within next 31 days
             # converted to a three class problem of don't buy, buy, and buy many.
-            max_increase = np.nanmax(perc_after_close.values[:46])
-            max_decrease = np.nanmin(perc_after_close.values[:31])
+            max_increase = np.nanmax(perc_after_close.values[:45])
             if price_today < 10 and max_increase > 165:
                 true_label = 1
-            elif 10 < price_today < 20 and max_increase > 165:
+            elif 10 < price_today < 15 and max_increase > 165:
                 true_label = 1
-            elif 20 < price_today < 40 and max_increase > 165:
-                true_label = 1
+            #elif 20 < price_today < 40 and max_increase > 165:
+            #    true_label = 0
             #elif 40 < price_today and max_increase > 165:
             #    true_label = 1
-            elif np.isnan(max_increase) or price_today > 40:
+            elif np.isnan(max_increase) or price_today > 15:
                 raise ValueError("True label became NAN")
             else:
                 true_label = 0
-            return price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close.values[:46]
+            return price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close.values[:46], price_avg_last_30_days
         except (IndexError, ValueError) as e:
             #print(f"Error message: {e}")
             #print(f"If Error message started with zero-value, then {stock} was mentioned before available stock prices: {np.min(day_diff)}")
             #print(f"Error message was True label became NAN, then it was because no stock data existed after mention")
-            return np.nan, np.nan, np.nan, np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     def _merge_parameters_and_labels(self, df_stockMentions_small, df_stockPrices_small, stock, data_set, last_check):
         parameters_stock, label_stock, perc_money, stock_list, mention_fut = list(), list(), list(), list(), list()
         # For each mention in stock mentions compute parameters
         for i, date_of_mention in enumerate(df_stockMentions_small["date"].sort_values()):
+            # Get number of mentions last two months
+            mentions_last_two_months = np.count_nonzero(np.logical_and(date_of_mention > df_stockMentions_small["date"],
+                                            date_of_mention - pd.Timedelta(days=61) < df_stockMentions_small["date"]))
 
-            if i < 2 or data_set == "since_last" and date_of_mention < last_check:
+            if mentions_last_two_months == 0 or data_set == "since_last" and date_of_mention < last_check:
                 continue
-            elif i > 6:
+            elif i > 14:
                 break
 
-            price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close = self._get_price_parameters_and_labels(
+            price_today, price_avg_last_3_days, price_avg_last_7_days, true_label, perc_after_close, price_avg_last_30_days = self._get_price_parameters_and_labels(
                 df_stockPrices_small, stock, date_of_mention, data_set)
 
-            _, days_since_first, followers, _, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks, _ = self._get_mention_parameters(
+            cmb, days_since_first, followers, dmb, mentions_0t2weeks, mentions_2t4weeks, mentions_4t6weeks, mlw = self._get_mention_parameters(
                 df_stockMentions_small, date_of_mention)
 
             # Save params in array
             params = np.asarray([price_today, price_avg_last_3_days, price_avg_last_7_days,
-                                 days_since_first, followers])
+                                 days_since_first, followers, price_avg_last_30_days, cmb, dmb, mlw])
 
             # Check for NANs and discard values if Nans
             if np.isnan(params).any():
@@ -228,6 +240,7 @@ class MLModel:
             else:
                 self.since_last_set_params = np.concatenate((self.since_last_set_params, parameters_stock), axis=0)
                 self.stock_list_since_last += stock_list
+                self.mention_dates_since_last = np.concatenate((self.mention_dates_since_last, label_stock))
 
         # For making the list for predefined splits to keep stocks in separated groups when doing CV
         splits_idxs = np.array_split(np.arange(len(self.amount_of_stock_input)), 5)
@@ -241,7 +254,8 @@ class MLModelForest(MLModel):
         self.forest = RandomForestClassifier(n_estimators=100, min_samples_leaf=5, max_depth=4, class_weight="balanced", bootstrap=False)
 
     def cv_score(self, leaf, lay, bootstrap):
-        self.forest = RandomForestClassifier(n_estimators=100, min_samples_leaf=leaf, max_depth=lay, class_weight="balanced_subsample", bootstrap=bootstrap)
+        balance = {0: 1, 1: 1.4}
+        self.forest = RandomForestClassifier(n_estimators=100, min_samples_leaf=leaf, max_depth=lay, class_weight=balance, bootstrap=bootstrap)
 
         cv_score = cross_validate(self.forest, self.train_set_params, self.train_set_labels,
                                   cv=PredefinedSplit(self.stock_kfold_idxs), return_train_score=True)
@@ -267,9 +281,7 @@ class MLModelForest(MLModel):
         sales_value = list()
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
-            non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
-            print(price_today[idx])
-            sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it, thrs))
+            sales_value.append(self._get_sales_value(money_mask[idx], price_today[idx], stock, plot_it, thrs))
 
         # Compute the earnings by remembering to multiply them over time (renters rente)
         average_time_to_sell = np.mean(np.asarray(sales_value)[:, 5])
@@ -310,59 +322,60 @@ class MLModelForest(MLModel):
         sales_value = list()
         for stock in np.unique(stock_mask):
             idx = np.nonzero(stock_mask == stock)[0][0]
-            non_nan_money = money_mask[idx][~np.isnan(money_mask[idx])]
-            print(price_today[idx])
-            sales_value.append(self._get_sales_value(non_nan_money, price_today[idx], stock, plot_it))
+            sales_value.append(self._get_sales_value(money_mask[idx], price_today[idx], stock, plot_it))
 
         # Compute the earnings by remembering to multiply
         average_time_to_sell = np.mean(np.asarray(sales_value)[:, 5])
         rounds_per_six_month = int(np.floor(180 / average_time_to_sell))
         remove_it = len(np.unique(stock_mask)) % rounds_per_six_month
-        if remove_it == 0:
-            first_part = np.mean(np.reshape(np.asarray(sales_value)[:, 4], (rounds_per_six_month, -1)), axis=1)
-        else:
-            first_part = np.mean(np.reshape(np.asarray(sales_value)[:-remove_it, 4], (rounds_per_six_month, -1)),
-                                 axis=1)
-        # second_part = np.mean(sales_value[-remove_it:, 4])
-        final_earn = np.prod(first_part / 100)
+        try:
+            if remove_it == 0:
+                first_part = np.mean(np.reshape(np.asarray(sales_value)[:, 4], (rounds_per_six_month, -1)), axis=1)
+            else:
+                first_part = np.mean(np.reshape(np.asarray(sales_value)[:-remove_it, 4], (rounds_per_six_month, -1)),
+                                     axis=1)
+            # second_part = np.mean(sales_value[-remove_it:, 4])
+            final_earn = np.prod(first_part / 100)
+        except FloatingPointError as e:
+            final_earn = e
 
         print(f"If we buy all the stocks recommended by the algorithm ({len(np.unique(stock_mask))} in total). "
               f"Then the earnings/loss over a month would be: {np.mean(sales_value, axis=0)}, prod {final_earn}")
 
-    def _get_sales_value(self, val, price_today, stock, plot_it=False, thrs=1000):
-        if price_today < 10:
-            sales_incr = thrs
-        elif price_today < 20:
-            sales_incr = thrs
-        elif price_today < 40:
-            sales_incr = thrs
-        else:
-            sales_incr = thrs
+    def _get_sales_value(self, nan_val, price_today, stock, plot_it=False, thrs=1000):
+        # Remove nan values
+        non_nan_val = nan_val[~np.isnan(nan_val)]
+
+        # Define thresholds
+        sales_incr = thrs
         # Set parameters
-        low = 50
+        low = 50  # How low the stock can drop before sale
+        max_keep = 45  # The latest sell (remember to account for weekends) (i.e. x weekdays after buy)
+        nan_max_keep = int(max_keep - max_keep // 3.5)
 
         # Compute moving average window of 9
         n = 9
-        mov_avg = np.convolve(np.concatenate(([100] * 8, val)), np.ones(n) / n, mode='valid')
+        mov_avg = np.convolve(np.concatenate(([100] * 8, non_nan_val)), np.ones(n) / n, mode='valid')
 
         # Compute exponential moving avg of size 20
         n = 20
         multiplier = 2 / (n + 1)
-        ema = [(val[0] - 100) * multiplier + 100]
-        for i in range(len(val) - 1):
-            ema.append((val[i + 1] - ema[i]) * multiplier + ema[i])
+        ema = [(non_nan_val[0] - 100) * multiplier + 100]
+        for i in range(len(non_nan_val) - 1):
+            ema.append((non_nan_val[i + 1] - ema[i]) * multiplier + ema[i])
 
         if plot_it:
             plt.ion()
             plt.figure()
-            plt.plot(val, label="Raw")
+            plt.plot(non_nan_val, label="Raw")
             plt.plot(mov_avg, label="Mov_avg")
             plt.plot(ema, label="EMA")
             plt.title(stock)
             plt.legend()
             plt.draw()
+
         # Compute cumulative value 4 values back
-        cumul_val = np.cumsum(np.diff(np.concatenate((np.asarray([100]), val))))
+        cumul_val = np.cumsum(np.diff(np.concatenate((np.asarray([100]), non_nan_val))))
         cumul_val[4:] = cumul_val[4:] - cumul_val[:-4]
         cumul_val[:4] = cumul_val[:4]
 
@@ -370,40 +383,45 @@ class MLModelForest(MLModel):
         idx_cum = np.nonzero(cumul_val > sales_incr)[0]
         if len(idx_cum) != 0:
             idx_cum = idx_cum[0]
+            idx_cum = np.min(np.nonzero(nan_val == non_nan_val[idx_cum])[0])
         else:
-            idx_cum = len(val[:40]) - 1
+            idx_cums = np.nonzero(non_nan_val[len(non_nan_val[:nan_max_keep]) - 1] == nan_val)[0]
+            idx_cum = idx_cums[np.argmin(abs(idx_cums - max_keep))]
 
         # If there is a place where the value goes below low then set that as idx
-        idx_low = np.nonzero(val < low)[0]
+        idx_low = np.nonzero(non_nan_val < low)[0]
         if len(idx_low) != 0:
             idx_low = idx_low[0]
+            idx_low = np.min(np.nonzero(nan_val == non_nan_val[idx_low])[0])
         else:
-            idx_low = len(val[:40]) - 1
+            idx_lows = np.nonzero(non_nan_val[len(non_nan_val[:nan_max_keep]) - 1] == nan_val)[0]
+            idx_low = idx_lows[np.argmin(abs(idx_lows - max_keep))]
 
+        # Set the indices by choosing the first coming of the two indices
         idx = np.min([idx_cum, idx_low])
         our_sell1 = idx.item()
 
-        top_val1 = np.argmax(val).item()
-        last_val1 = len(val) - 1
+        top_val1 = np.nanargmax(nan_val).item()
+        last_val1 = np.nonzero(non_nan_val[len(non_nan_val) - 1] == nan_val)[0][-1]
 
         #
         diff = np.nonzero(np.diff(np.sign(mov_avg - ema)) < 0)[0]
         if len(diff) > 0:
             diff = diff[0]
         else:
-            diff = len(val[:40]) - 1
+            diff = len(non_nan_val[:nan_max_keep]) - 1
         if plot_it:
             plt.vlines(top_val1, 99, 110, color="g")
             plt.vlines(last_val1, 98, 110, color="k")
             plt.vlines(our_sell1, 97, 110, color="r")
             plt.vlines(diff, 96, 100, color="orange")
 
-        return val[top_val1], top_val1, val[last_val1], last_val1, val[our_sell1], our_sell1
+        return nan_val[top_val1], top_val1, nan_val[last_val1], last_val1, nan_val[our_sell1], our_sell1
 
     def update_database(self, most_common_words, last_check):
         # Update data base
-        functions.construct_data_base(most_common_words, start_date=pd.Timestamp(2020, 7, 1),
-                                      end_date=pd.Timestamp(2021, 1, 1), last_check=last_check)
+        #functions.construct_data_base(most_common_words, start_date=pd.Timestamp(2020, 7, 1),
+        #                              end_date=pd.Timestamp(2021, 1, 1), last_check=last_check)
 
         con = sqlite3.connect("get_data/aktiespekulanterne/data/youtube_stocks.db")
         df_stockMentions = pd.read_sql_query("SELECT * from stockMentions", con)
@@ -430,7 +448,7 @@ class MLModelForest(MLModel):
 
     def get_new_buys(self, last_check):
         # Remove previous computed parameters and stocks
-        self.since_last_set_params = np.empty((0, 5))
+        self.since_last_set_params = np.empty((0, 9))
         self.stock_list_since_last = list()
 
         # Compute input parameters for newest mentions
@@ -451,27 +469,38 @@ class MLModelForest(MLModel):
             mention_num = list()
             idxs = np.unique(self.stock_list_since_last, return_index=True)[1]
             stock_list = [self.stock_list_since_last[index] for index in sorted(idxs)]
+            sto, cou = np.unique(self.stock_list_since_last, return_counts=True)
             for stock in stock_list:
+                # Get number of mentions of stock in self.stock_list_since_last
+                sto_cou = cou[sto == stock]
+                # Extract stock mentions and sort according to date
                 df_helper = self.df_stockMentions[self.df_stockMentions["stock"] == stock[0]]
-                # If df_helper is larger than 7 then cut down to the first seven to avoid problems with same day mention
-                if len(df_helper) > 7:
-                    df_helper = df_helper.sort_values("date").iloc[:7]
+                df_helper = df_helper.sort_values("date", ascending=True)
                 # Get whole len
                 whole_len = len(df_helper)
-                # Reduce to keep only the new mentions
-                df_helper = df_helper["source"][df_helper["date"] > last_check]
                 # Get the source name(s)
-                for i, source in enumerate(df_helper.values):
-                    sources.append(self.df_youtubeSources["name"][self.df_youtubeSources["id"] == source].item())
+                men_num = 0
+                for i in range(len(df_helper)):
+                    mentions_last_two_months = np.count_nonzero(
+                        np.logical_and(df_helper.iloc[i]["date"] > df_helper["date"],
+                                       df_helper.iloc[i]["date"] - pd.Timedelta(days=61) < df_helper["date"]))
+                    if mentions_last_two_months == 0 or df_helper.iloc[i]["date"] < last_check or i > 14:
+                        continue
+                    men_num += 1
+                    if men_num > sto_cou:
+                        continue
+                    sources.append(self.df_youtubeSources["name"][self.df_youtubeSources["id"] == df_helper.iloc[i]["source"]].item())
                     mention_num.append(whole_len - (len(df_helper.values) - i - 1))
             df_csv["source"] = sources
             df_csv["num_of_mention"] = mention_num
+            df_csv["date_of_mention"] = self.mention_dates_since_last
             df_csv["date_of_prediction"] = [pd.Timestamp.today().date()] * len(predictions)
             df_csv["time_of_prediction"] = [pd.Timestamp.today()] * len(predictions)
             df_csv["predictions"] = predictions
             if os.path.isfile("algorithm_predictions.csv"):
                 df = pd.read_csv("algorithm_predictions.csv").drop(columns="Unnamed: 0")
                 df_csv = df.append(df_csv)
+            df_csv = df_csv.sort_values("date_of_mention", ascending=True)
             df_csv.to_csv("algorithm_predictions.csv")
 
             # Print results
